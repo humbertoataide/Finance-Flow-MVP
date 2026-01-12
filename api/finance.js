@@ -2,20 +2,70 @@
 import pg from 'pg';
 const { Pool } = pg;
 
-// Inicializa o Pool fora do handler para reutilizar conexões em lambdas "quentes"
+// Inicializa o Pool fora do handler para reutilizar conexões
 const pool = new Pool({
   connectionString: process.env.POSTGRES_URL || process.env.DATABASE_URL,
   ssl: {
     rejectUnauthorized: false
   },
-  max: 10, // Limite de conexões simultâneas
+  max: 10,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  connectionTimeoutMillis: 10000, // Aumentado para 10s para lidar com cold starts
 });
+
+async function ensureSchema(client) {
+  // Cria as tabelas necessárias se não existirem
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS categories (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS transactions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      date DATE NOT NULL,
+      description TEXT NOT NULL,
+      amount DECIMAL(12,2) NOT NULL,
+      category_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      is_recurring BOOLEAN DEFAULT FALSE,
+      recurring_id TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS budgets (
+      user_id TEXT NOT NULL,
+      category_id TEXT NOT NULL,
+      amount DECIMAL(12,2) NOT NULL,
+      PRIMARY KEY (user_id, category_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS recurring_templates (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      description TEXT NOT NULL,
+      amount DECIMAL(12,2) NOT NULL,
+      category_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      day_of_month INTEGER NOT NULL,
+      active BOOLEAN DEFAULT TRUE,
+      start_date DATE,
+      end_date DATE
+    );
+  `);
+}
 
 export default async function handler(req, res) {
   const { method } = req;
   const { userId, action } = req.query;
+
+  if (!process.env.POSTGRES_URL && !process.env.DATABASE_URL) {
+    return res.status(500).json({ 
+      error: 'Variável de ambiente de banco de dados não configurada (POSTGRES_URL ou DATABASE_URL).' 
+    });
+  }
 
   if (!userId) {
     return res.status(400).json({ error: 'User ID is required' });
@@ -23,8 +73,10 @@ export default async function handler(req, res) {
 
   let client;
   try {
-    // Tenta obter uma conexão do pool
     client = await pool.connect();
+    
+    // Garante que o banco está pronto
+    await ensureSchema(client);
 
     if (method === 'GET') {
       const [transactions, categories, budgets, recurring] = await Promise.all([
@@ -129,17 +181,13 @@ export default async function handler(req, res) {
 
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (error) {
-    console.error('CRITICAL DATABASE ERROR:', error);
-    // Retorna JSON para evitar o erro de parsing no frontend
+    console.error('DATABASE ERROR:', error);
     return res.status(500).json({ 
-      error: 'Erro interno no banco de dados', 
+      error: 'Erro na operação do banco de dados', 
       details: error.message,
-      code: error.code
+      hint: 'Verifique se as credenciais no Vercel estão corretas.'
     });
   } finally {
-    // Apenas libera se o client foi criado com sucesso
-    if (client) {
-      client.release();
-    }
+    if (client) client.release();
   }
 }
