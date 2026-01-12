@@ -2,18 +2,24 @@
 import pg from 'pg';
 const { Pool } = pg;
 
-const pool = new Pool({
-  connectionString: process.env.POSTGRES_URL || process.env.DATABASE_URL,
+// Configuração robusta para o Pool de conexões
+const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+
+const poolConfig = {
+  connectionString,
   ssl: {
+    // Força a aceitação de certificados auto-assinados, comum em Neon/Supabase/Render
     rejectUnauthorized: false
   },
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
-});
+};
+
+const pool = new Pool(poolConfig);
 
 async function ensureSchema(client) {
-  // Executar comandos individualmente é mais seguro em drivers PG
+  // Criação de tabelas individualmente para maior compatibilidade
   await client.query(`
     CREATE TABLE IF NOT EXISTS categories (
       id TEXT PRIMARY KEY,
@@ -66,11 +72,10 @@ export default async function handler(req, res) {
   const { method } = req;
   const { userId, action } = req.query;
 
-  const dbUrl = process.env.POSTGRES_URL || process.env.DATABASE_URL;
-  if (!dbUrl) {
+  if (!connectionString) {
     return res.status(500).json({ 
-      error: 'Variável de ambiente de banco de dados ausente.',
-      details: 'Certifique-se de que POSTGRES_URL ou DATABASE_URL está configurada no painel da Vercel.'
+      error: 'Configuração de Banco de Dados ausente.',
+      details: 'As variáveis POSTGRES_URL ou DATABASE_URL não foram encontradas no ambiente.'
     });
   }
 
@@ -82,13 +87,13 @@ export default async function handler(req, res) {
   try {
     client = await pool.connect();
     
-    // Inicialização do esquema
+    // Garantir que as tabelas existem
     try {
       await ensureSchema(client);
     } catch (schemaError) {
-      console.error('Schema creation failed:', schemaError);
+      console.error('Falha ao criar esquema:', schemaError);
       return res.status(500).json({ 
-        error: 'Falha ao preparar as tabelas do banco de dados.', 
+        error: 'Erro ao preparar banco de dados', 
         details: schemaError.message 
       });
     }
@@ -194,7 +199,7 @@ export default async function handler(req, res) {
 
     return res.status(405).json({ error: 'Método não permitido' });
   } catch (error) {
-    console.error('API ERROR:', error);
+    console.error('DATABASE CRITICAL ERROR:', error);
     return res.status(500).json({ 
       error: 'Erro na operação do banco de dados', 
       details: error.message,
