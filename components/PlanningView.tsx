@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Transaction, Category, Budget, RecurringTransaction, TransactionType } from '../types';
-import { Target, AlertCircle, CheckCircle2, TrendingUp, Zap, Plus, Trash2, Repeat, CalendarCheck, Lightbulb, Calendar, Edit3, X, HelpCircle, History } from 'lucide-react';
+import { Target, AlertCircle, CheckCircle2, TrendingUp, Zap, Plus, Trash2, Repeat, CalendarCheck, Lightbulb, Calendar, Edit3, X, HelpCircle, History, Copy } from 'lucide-react';
 import { startOfMonth, endOfMonth, isWithinInterval, parseISO, format, subMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -119,6 +119,22 @@ const PlanningView: React.FC<PlanningViewProps> = ({
       endDate: item.endDate || ''
     });
     setShowRecurringForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDuplicateRecurring = (item: RecurringTransaction) => {
+    setEditingId(null); // Nova transação (cópia)
+    setNewRecurring({
+      description: `${item.description} (Cópia)`,
+      amount: item.amount.toString(),
+      categoryId: item.categoryId,
+      type: item.type,
+      dayOfMonth: item.dayOfMonth,
+      startDate: item.startDate || '',
+      endDate: item.endDate || ''
+    });
+    setShowRecurringForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSubmitRecurring = (e: React.FormEvent) => {
@@ -358,7 +374,7 @@ const PlanningView: React.FC<PlanningViewProps> = ({
             {recurring.map(item => {
               const isCommitted = committedRecurringIds.has(item.description.toLowerCase().trim());
               return (
-                <div key={item.id} className={`p-5 rounded-[1.5rem] border bg-white flex flex-col justify-between group transition-all ${isCommitted ? 'opacity-70' : 'shadow-sm hover:shadow-md'}`}>
+                <div key={item.id} className={`p-5 rounded-[1.5rem] border bg-white flex flex-col justify-between group transition-all ${isCommitted ? 'opacity-70 shadow-inner' : 'shadow-sm hover:shadow-md'}`}>
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <div className={`p-2 rounded-xl ${item.type === 'income' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
@@ -371,7 +387,15 @@ const PlanningView: React.FC<PlanningViewProps> = ({
                     </div>
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button 
+                        onClick={() => handleDuplicateRecurring(item)}
+                        title="Duplicar"
+                        className="p-1.5 bg-slate-50 text-slate-600 rounded-lg hover:bg-slate-200 transition-all"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                      <button 
                         onClick={() => handleEditRecurring(item)}
+                        title="Editar"
                         className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all"
                       >
                         <Edit3 className="w-3.5 h-3.5" />

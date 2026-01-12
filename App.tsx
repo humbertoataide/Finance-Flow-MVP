@@ -10,7 +10,7 @@ import TransactionForm from './components/TransactionForm';
 import AuthView from './components/AuthView';
 import { useFinanceData } from './hooks/useFinanceData';
 import { User, RecurringTransaction, Transaction } from './types';
-import { startOfMonth, endOfMonth, isWithinInterval, parseISO, addMonths, isBefore, isAfter, format } from 'date-fns';
+import { startOfMonth, endOfMonth, isWithinInterval, parseISO, addMonths, isBefore, isAfter } from 'date-fns';
 
 type ViewType = 'dashboard' | 'transactions' | 'categories' | 'planning';
 
@@ -60,7 +60,7 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Motor de Processamento Automático de Recorrência (Refinado para preencher todas as lacunas)
+  // Motor de Processamento Automático de Recorrência (Refinado para 12 meses futuros)
   useEffect(() => {
     if (!user || recurring.length === 0) return;
 
@@ -70,14 +70,15 @@ const App: React.FC = () => {
     recurring.forEach(item => {
       if (!item.active) return;
 
-      // Se não tiver startDate, limita a 12 meses atrás para evitar loops infinitos ou dados excessivos
+      // Se não tiver startDate, limita a 12 meses atrás
       let currentCheck = item.startDate ? parseISO(item.startDate) : startOfMonth(addMonths(today, -12));
-      const endLimit = item.endDate ? parseISO(item.endDate) : addMonths(today, 1);
-
-      // Garante que começamos no início do mês da data de início
+      
+      // Estende a verificação até 12 meses no futuro (13 meses de janela total a partir de hoje)
+      const futureLimit = addMonths(today, 13);
+      
       currentCheck = startOfMonth(currentCheck);
       
-      while (isBefore(currentCheck, addMonths(today, 1))) {
+      while (isBefore(currentCheck, futureLimit)) {
         // Se a data de verificação passou da data final da recorrência, interrompe
         if (item.endDate && isAfter(currentCheck, parseISO(item.endDate))) break;
 

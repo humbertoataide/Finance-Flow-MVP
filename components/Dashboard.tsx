@@ -5,7 +5,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   PieChart, Pie, Cell, Legend, LabelList
 } from 'recharts';
-import { TrendingUp, TrendingDown, Wallet, Calendar, Target, Zap, Repeat, Filter } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wallet, Calendar, Target, Repeat } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, isWithinInterval, parseISO, startOfYear } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -92,10 +92,13 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
       .map(cat => {
         const spent = spentMap.get(cat.id) || 0;
         const budget = budgets.find(b => b.categoryId === cat.id)?.amount || 0;
+        const result = budget - spent;
         return {
           name: cat.name,
           Orçado: budget,
           Realizado: spent,
+          Resultado: result,
+          resColor: result >= 0 ? '#10b981' : '#ef4444',
           color: cat.color
         };
       })
@@ -140,7 +143,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
                   filterPeriod === p ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
-                {p === 'month' ? 'Mês' : p === 'year' ? 'Ano' : p === 'all' ? 'Tudo' : 'Custom'}
+                {p === 'month' ? 'Mês' : p === 'year' ? 'Ano' : p === 'all' ? 'Tudo' : 'Escolher Datas'}
               </button>
             ))}
           </div>
@@ -212,15 +215,15 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
               <Target className="w-5 h-5 text-blue-500" />
-              Metas: Orçado vs Realizado
+              Metas: Orçado vs Realizado vs Resultado
             </h3>
           </div>
-          <div className="h-80 w-full">
+          <div className="h-96 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={budgetVsActualData} layout="vertical" margin={{ left: 20, right: 90 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
@@ -232,17 +235,25 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
                   formatter={(value: number) => formatCurrency(value)}
                 />
                 <Legend iconType="circle" verticalAlign="top" align="right" wrapperStyle={{ paddingBottom: '20px', fontSize: '10px' }} />
-                <Bar dataKey="Orçado" fill="#cbd5e1" radius={[0, 4, 4, 0]} barSize={12}>
+                <Bar dataKey="Orçado" fill="#cbd5e1" radius={[0, 4, 4, 0]} barSize={8}>
                    <LabelList dataKey="Orçado" position="right" formatter={(v: number) => v > 0 ? formatCurrency(v) : ''} style={{ fontSize: '9px', fontWeight: 'bold', fill: '#94a3b8' }} />
                 </Bar>
-                <Bar dataKey="Realizado" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={12}>
+                <Bar dataKey="Realizado" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={8}>
                    <LabelList dataKey="Realizado" position="right" formatter={(v: number) => v > 0 ? formatCurrency(v) : ''} style={{ fontSize: '9px', fontWeight: 'bold', fill: '#3b82f6' }} />
+                </Bar>
+                <Bar dataKey="Resultado" radius={[0, 4, 4, 0]} barSize={8}>
+                  {budgetVsActualData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.resColor} />
+                  ))}
+                  <LabelList dataKey="Resultado" position="right" formatter={(v: number) => formatCurrency(v)} style={{ fontSize: '9px', fontWeight: 'black' }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
+      </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
             <Calendar className="w-5 h-5 text-slate-400" />
@@ -274,11 +285,11 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm lg:col-span-2">
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm lg:col-span-1">
           <div className="flex items-center justify-between mb-6">
              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                <TrendingUp className="w-5 h-5 text-slate-400" />
-               Evolução Histórica (Últimos 12 Meses)
+               Evolução Histórica
              </h3>
           </div>
           <div className="h-80 w-full">
