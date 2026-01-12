@@ -11,6 +11,7 @@ import AuthView from './components/AuthView';
 import { useFinanceData } from './hooks/useFinanceData';
 import { User, RecurringTransaction, Transaction } from './types';
 import { startOfMonth, endOfMonth, isWithinInterval, parseISO, addMonths, isBefore, isAfter } from 'date-fns';
+import { Loader2, CloudOff } from 'lucide-react';
 
 type ViewType = 'dashboard' | 'transactions' | 'categories' | 'planning';
 
@@ -26,20 +27,10 @@ const App: React.FC = () => {
   }, []);
 
   const { 
-    transactions, 
-    categories, 
-    budgets,
-    recurring,
-    addTransactions, 
-    updateTransaction, 
-    deleteTransaction,
-    addCategory,
-    updateCategory,
-    deleteCategory,
-    updateBudget,
-    addRecurring,
-    removeRecurring,
-    updateRecurring
+    transactions, categories, budgets, recurring, loading, error,
+    addTransactions, updateTransaction, deleteTransaction,
+    addCategory, updateCategory, deleteCategory, updateBudget,
+    addRecurring, removeRecurring, updateRecurring
   } = useFinanceData(user?.id || null);
 
   const generateRecurringTransaction = useCallback((item: RecurringTransaction, date: Date): Transaction => {
@@ -60,41 +51,29 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Motor de Processamento Automático de Recorrência (Refinado para 12 meses futuros)
   useEffect(() => {
-    if (!user || recurring.length === 0) return;
+    if (!user || recurring.length === 0 || loading) return;
 
     const today = new Date();
     const pendingLaunches: Transaction[] = [];
 
     recurring.forEach(item => {
       if (!item.active) return;
-
-      // Se não tiver startDate, limita a 12 meses atrás
       let currentCheck = item.startDate ? parseISO(item.startDate) : startOfMonth(addMonths(today, -12));
-      
-      // Estende a verificação até 12 meses no futuro (13 meses de janela total a partir de hoje)
       const futureLimit = addMonths(today, 13);
-      
       currentCheck = startOfMonth(currentCheck);
       
       while (isBefore(currentCheck, futureLimit)) {
-        // Se a data de verificação passou da data final da recorrência, interrompe
         if (item.endDate && isAfter(currentCheck, parseISO(item.endDate))) break;
-
         const startOfM = startOfMonth(currentCheck);
         const endOfM = endOfMonth(currentCheck);
-
-        // Verifica se já existe lançamento para este item neste mês específico
         const alreadyLaunched = transactions.some(t => 
           t.recurringId === item.id && 
           isWithinInterval(parseISO(t.date), { start: startOfM, end: endOfM })
         );
-
         if (!alreadyLaunched) {
           pendingLaunches.push(generateRecurringTransaction(item, currentCheck));
         }
-
         currentCheck = addMonths(currentCheck, 1);
       }
     });
@@ -102,11 +81,10 @@ const App: React.FC = () => {
     if (pendingLaunches.length > 0) {
       addTransactions(pendingLaunches);
     }
-  }, [user, recurring, transactions, addTransactions, generateRecurringTransaction]);
+  }, [user, recurring, transactions, loading, addTransactions, generateRecurringTransaction]);
 
   const handleUpdateRecurringWithImpact = (id: string, updates: Partial<RecurringTransaction>, impactPast: boolean) => {
     updateRecurring(id, updates);
-
     if (impactPast) {
       const updatedTransactions = transactions
         .filter(t => t.recurringId === id)
@@ -116,7 +94,6 @@ const App: React.FC = () => {
           amount: updates.amount !== undefined ? (t.type === 'expense' ? -Math.abs(updates.amount) : Math.abs(updates.amount)) : t.amount,
           categoryId: updates.categoryId ?? t.categoryId,
         }));
-
       updatedTransactions.forEach(t => updateTransaction(t.id, t));
     }
   };
@@ -137,6 +114,17 @@ const App: React.FC = () => {
   }
 
   const renderContent = () => {
+    if (error) {
+      return (
+        <div className="flex flex-col items-center justify-center h-96 space-y-4">
+          <CloudOff className="w-16 h-16 text-rose-500" />
+          <h2 className="text-xl font-bold text-slate-800">Erro de Conexão</h2>
+          <p className="text-slate-500">{error}</p>
+          <button onClick={() => window.location.reload()} className="px-6 py-2 bg-blue-600 text-white rounded-xl font-bold">Tentar Novamente</button>
+        </div>
+      );
+    }
+
     switch (activeView) {
       case 'dashboard':
         return <Dashboard transactions={transactions} categories={categories} budgets={budgets} />;
@@ -181,6 +169,15 @@ const App: React.FC = () => {
 
   return (
     <Layout activeView={activeView} setActiveView={setActiveView} user={user} onLogout={handleLogout}>
+      {loading && (
+        <div className="fixed inset-0 z-[100] bg-slate-50/60 backdrop-blur-[2px] flex items-center justify-center">
+          <div className="bg-white p-6 rounded-3xl shadow-2xl flex flex-col items-center space-y-4 border border-slate-100">
+             <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
+             <p className="text-sm font-bold text-slate-600">Sincronizando com Vercel Postgres...</p>
+          </div>
+        </div>
+      )}
+
       {renderContent()}
 
       {showImport && (
