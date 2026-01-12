@@ -3,7 +3,7 @@ import React, { useMemo } from 'react';
 import { Transaction, Category, Budget } from '../types';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell, Legend
+  PieChart, Pie, Cell, Legend, LabelList
 } from 'recharts';
 import { TrendingUp, TrendingDown, Wallet, Calendar, Target, Zap } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, isWithinInterval, parseISO, addMonths, subMonths } from 'date-fns';
@@ -54,7 +54,6 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
     }).sort((a, b) => b.value - a.value);
   }, [filteredTransactions, categories]);
 
-  // Budget vs Actual Logic
   const budgetVsActualData = useMemo(() => {
     const now = new Date();
     const start = startOfMonth(now);
@@ -84,17 +83,13 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
       .filter(d => d.Orçado > 0 || d.Realizado > 0);
   }, [transactions, categories, budgets]);
 
-  // Enhanced Projection Logic: Stacked Monthly Projections
   const monthlyProjectionData = useMemo(() => {
     const now = new Date();
     const activeCategories = categories.filter(c => c.id !== 'cat-unassigned');
-    
-    // 1. Calculate historical average per category (last 6 months excluding current)
     const historyStart = startOfMonth(subMonths(now, 6));
     const historyEnd = endOfMonth(subMonths(now, 1));
     const historicalTransactions = transactions.filter(t => 
-      t.type === 'expense' && 
-      isWithinInterval(parseISO(t.date), { start: historyStart, end: historyEnd })
+      t.type === 'expense' && isWithinInterval(parseISO(t.date), { start: historyStart, end: historyEnd })
     );
 
     const historicalTotals = new Map<string, number>();
@@ -107,12 +102,10 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
       historicalAverages.set(cat.id, (historicalTotals.get(cat.id) || 0) / 6);
     });
 
-    // 2. Project current month (linear projection)
     const currentDay = now.getDate();
     const daysInMonth = endOfMonth(now).getDate();
     const currentMonthExpenses = transactions.filter(t => 
-      t.type === 'expense' && 
-      isWithinInterval(parseISO(t.date), { start: startOfMonth(now), end: endOfMonth(now) })
+      t.type === 'expense' && isWithinInterval(parseISO(t.date), { start: startOfMonth(now), end: endOfMonth(now) })
     );
 
     const currentMonthActuals = new Map<string, number>();
@@ -120,7 +113,6 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
       currentMonthActuals.set(t.categoryId, (currentMonthActuals.get(t.categoryId) || 0) + Math.abs(t.amount));
     });
 
-    // 3. Generate data for current + next 3 months
     const projectionSet = [];
     for (let i = 0; i <= 3; i++) {
       const targetMonth = addMonths(now, i);
@@ -129,12 +121,10 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
 
       activeCategories.forEach(cat => {
         if (i === 0) {
-          // Current Month: Actual + Estimate for remainder
           const actual = currentMonthActuals.get(cat.id) || 0;
           const estimate = (actual / Math.max(currentDay, 1)) * daysInMonth;
           dataPoint[cat.name] = Math.round(estimate || historicalAverages.get(cat.id) || 0);
         } else {
-          // Future Months: Historical Average or Budget if higher
           const avg = historicalAverages.get(cat.id) || 0;
           const budget = budgets.find(b => b.categoryId === cat.id)?.amount || 0;
           dataPoint[cat.name] = Math.max(avg, budget);
@@ -142,12 +132,15 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
       });
       projectionSet.push(dataPoint);
     }
-
     return projectionSet;
   }, [transactions, categories, budgets]);
 
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+    return new Intl.NumberFormat('pt-BR', { 
+      style: 'currency', 
+      currency: 'BRL', 
+      maximumFractionDigits: 0 
+    }).format(value);
   };
 
   const timelineData = useMemo(() => {
@@ -162,7 +155,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
   }, [transactions]);
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-6 animate-in fade-in duration-500 pb-12">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Resumo Financeiro</h2>
@@ -183,7 +176,6 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
         </div>
       </div>
 
-      {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden group">
           <div className="flex items-center justify-between mb-4">
@@ -224,7 +216,6 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Budget vs Actual Chart */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -235,9 +226,9 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
           </div>
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={budgetVsActualData} layout="vertical" margin={{ left: 20 }}>
+              <BarChart data={budgetVsActualData} layout="vertical" margin={{ left: 20, right: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
+                <XAxis type="number" hide />
                 <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} width={80} />
                 <Tooltip 
                   cursor={{ fill: '#f8fafc' }}
@@ -245,21 +236,24 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
                   formatter={(value: number) => formatCurrency(value)}
                 />
                 <Legend iconType="circle" wrapperStyle={{ paddingTop: '10px', fontSize: '10px' }} />
-                <Bar dataKey="Orçado" fill="#94a3b8" radius={[0, 4, 4, 0]} barSize={8} />
-                <Bar dataKey="Realizado" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={8} />
+                <Bar dataKey="Orçado" fill="#94a3b8" radius={[0, 4, 4, 0]} barSize={8}>
+                   <LabelList dataKey="Orçado" position="right" formatter={(v: number) => v > 0 ? formatCurrency(v) : ''} style={{ fontSize: '9px', fontWeight: 'bold', fill: '#94a3b8' }} />
+                </Bar>
+                <Bar dataKey="Realizado" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={8}>
+                   <LabelList dataKey="Realizado" position="right" formatter={(v: number) => v > 0 ? formatCurrency(v) : ''} style={{ fontSize: '9px', fontWeight: 'bold', fill: '#3b82f6' }} />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Stacked Projection Chart */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
               <Zap className="w-5 h-5 text-amber-500" />
-              Projeção Mensal por Categoria
+              Projeção Mensal
             </h3>
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Histórico + 3 Meses</span>
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Estimado p/ Mês</span>
           </div>
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -274,20 +268,19 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
                 />
                 <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '10px' }} />
                 {categories.filter(c => c.id !== 'cat-unassigned').map((cat) => (
-                  <Bar 
-                    key={cat.id} 
-                    dataKey={cat.name} 
-                    stackId="a" 
-                    fill={cat.color} 
-                    radius={[0, 0, 0, 0]} 
-                  />
+                  <Bar key={cat.id} dataKey={cat.name} stackId="a" fill={cat.color} radius={[0, 0, 0, 0]} />
                 ))}
+                <Bar dataKey="total" hide>
+                   <LabelList position="top" formatter={(v: any, entry: any) => {
+                     const total = Object.values(entry.payload).filter(x => typeof x === 'number').reduce((a, b) => (a as any) + (b as any), 0);
+                     return formatCurrency(total as number);
+                   }} style={{ fontSize: '10px', fontWeight: 'black', fill: '#1e293b' }} />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Distribution Chart */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
             <Calendar className="w-5 h-5 text-slate-400" />
@@ -304,7 +297,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
                   outerRadius={100}
                   paddingAngle={8}
                   dataKey="value"
-                  label={({ name, value, percent }) => `${name}: ${formatCurrency(value)} (${(percent * 100).toFixed(0)}%)`}
+                  label={({ name, value }) => `${name}: ${formatCurrency(value)}`}
                   labelLine={{ stroke: '#cbd5e1', strokeWidth: 1 }}
                 >
                   {distributionData.map((entry, index) => (
@@ -320,7 +313,6 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
           </div>
         </div>
 
-        {/* Evolution Chart */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-slate-400" />
@@ -331,15 +323,19 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
               <BarChart data={timelineData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                <YAxis axisLine={false} tickLine={false} hide />
                 <Tooltip 
                   cursor={{ fill: '#f8fafc' }}
                   contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
                   formatter={(value: number) => [formatCurrency(value), '']}
                 />
                 <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '11px' }} />
-                <Bar dataKey="income" name="Receita" fill="#10b981" radius={[6, 6, 0, 0]} barSize={18} />
-                <Bar dataKey="expense" name="Despesa" fill="#ef4444" radius={[6, 6, 0, 0]} barSize={18} />
+                <Bar dataKey="income" name="Receita" fill="#10b981" radius={[6, 6, 0, 0]} barSize={18}>
+                  <LabelList dataKey="income" position="top" formatter={formatCurrency} style={{ fontSize: '9px', fontWeight: 'bold', fill: '#10b981' }} />
+                </Bar>
+                <Bar dataKey="expense" name="Despesa" fill="#ef4444" radius={[6, 6, 0, 0]} barSize={18}>
+                  <LabelList dataKey="expense" position="top" formatter={formatCurrency} style={{ fontSize: '9px', fontWeight: 'bold', fill: '#ef4444' }} />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>

@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Transaction, ImportMapping, ParseResult, Category } from '../types';
-import { Upload, X, ChevronRight, AlertCircle, Sparkles, Loader2 } from 'lucide-react';
+import { Upload, X, ChevronRight, AlertCircle, Sparkles, Loader2, Check, BrainCircuit } from 'lucide-react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from "@google/genai";
@@ -12,8 +12,14 @@ interface ImportWizardProps {
   categories: Category[];
 }
 
+interface AISuggestion {
+  description: string;
+  categoryId: string;
+  categoryName: string;
+}
+
 const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categories }) => {
-  const [step, setStep] = useState<'upload' | 'mapping' | 'preview'>('upload');
+  const [step, setStep] = useState<'upload' | 'mapping' | 'ai-review' | 'processing'>('upload');
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [mapping, setMapping] = useState<ImportMapping>({ 
     dateCol: -1, 
@@ -24,9 +30,11 @@ const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categori
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [aiSuggestions, setAiSuggestions] = useState<Record<string, string>>({});
+  const [tempTransactions, setTempTransactions] = useState<Transaction[]>([]);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Sugestão automática de mapeamento quando os headers são carregados
   useEffect(() => {
     if (parseResult && step === 'mapping') {
       const headers = parseResult.headers.map(h => String(h).toLowerCase().trim());
@@ -97,7 +105,6 @@ const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categori
   const parseFlexibleDate = (val: any): string => {
     if (!val) return new Date().toISOString().split('T')[0];
     if (val instanceof Date) return val.toISOString().split('T')[0];
-    
     const s = String(val).trim();
     let match = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
     if (match) {
@@ -109,36 +116,38 @@ const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categori
       }
       return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
     }
-    
     match = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
     if (match) {
       let [_, y, m, d] = match;
       return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
     }
-
     const d = new Date(s);
     if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
     return new Date().toISOString().split('T')[0];
   };
 
-  const aiCategorize = async (transactionsToProcess: Transaction[]) => {
-    try {
-      const unassignedItems = transactionsToProcess.filter(t => t.categoryId === 'cat-unassigned');
-      if (unassignedItems.length === 0) return transactionsToProcess;
+  const generateAISuggestions = async (transactions: Transaction[]) => {
+    const unassignedItems = transactions.filter(t => t.categoryId === 'cat-unassigned');
+    if (unassignedItems.length === 0) {
+      setStep('processing');
+      onImport(transactions);
+      onClose();
+      return;
+    }
 
-      // Limita a 100 descrições únicas para evitar timeouts e excesso de tokens
-      const uniqueDescriptions = Array.from(new Set(unassignedItems.map(t => t.description))).slice(0, 100);
-      
+    setIsProcessing(true);
+    try {
+      const uniqueDescriptions = Array.from(new Set(unassignedItems.map(t => t.description))).slice(0, 50);
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const availableCategories = categories
         .filter(c => c.id !== 'cat-unassigned')
         .map(c => `${c.name} (id: ${c.id})`)
         .join(', ');
 
-      const prompt = `Classifique estas transações. Use apenas os IDs fornecidos.
-      Categorias: ${availableCategories}.
-      Responda APENAS JSON: {"desc": "id_cat"}.
-      Transações: ${uniqueDescriptions.join(', ')}`;
+      const prompt = `Classifique estas transações bancárias. Use apenas os IDs fornecidos.
+      Categorias Disponíveis: ${availableCategories}.
+      Entradas: ${uniqueDescriptions.join(', ')}.
+      Retorne APENAS um objeto JSON plano onde a chave é a descrição e o valor é o id da categoria: {"DESC": "ID_CAT"}. Se não souber, ignore a chave.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -147,88 +156,76 @@ const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categori
       });
 
       const suggestions = JSON.parse(response.text || '{}');
-      return transactionsToProcess.map(t => {
-        if (t.categoryId === 'cat-unassigned' && suggestions[t.description]) {
-          return { ...t, categoryId: suggestions[t.description] };
-        }
-        return t;
-      });
+      setAiSuggestions(suggestions);
+      setTempTransactions(transactions);
+      setStep('ai-review');
     } catch (err) {
-      return transactionsToProcess;
+      console.error(err);
+      onImport(transactions);
+      onClose();
+    } finally {
+      setIsProcessing(false);
     }
   };
 
-  const processImport = async () => {
+  const processMapping = async () => {
     if (!parseResult) return;
     setIsProcessing(true);
     setProgress(0);
     
     const results: Transaction[] = [];
     const rows = parseResult.rows;
-    const chunkSize = 200; // Processa em lotes para não travar a UI
     
-    const processChunk = (startIndex: number): Promise<void> => {
-      return new Promise((resolve) => {
-        const endIndex = Math.min(startIndex + chunkSize, rows.length);
-        
-        for (let i = startIndex; i < endIndex; i++) {
-          const row = rows[i];
-          const dateRaw = row[mapping.dateCol];
-          const descRaw = row[mapping.descriptionCol];
-          const valueRaw = row[mapping.valueCol];
-          const catRaw = mapping.categoryCol !== -1 ? row[mapping.categoryCol] : null;
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const dateRaw = row[mapping.dateCol];
+      const descRaw = row[mapping.descriptionCol];
+      const valueRaw = row[mapping.valueCol];
+      const catRaw = mapping.categoryCol !== -1 ? row[mapping.categoryCol] : null;
 
-          if (!dateRaw || !descRaw || !valueRaw) continue;
+      if (!dateRaw || !descRaw || !valueRaw) continue;
 
-          let value = 0;
-          if (typeof valueRaw === 'number') {
-            value = valueRaw;
-          } else {
-            const cleanVal = String(valueRaw).replace(/[^\d.,-]/g, '').replace(',', '.');
-            value = parseFloat(cleanVal);
-            const valUpper = String(valueRaw).toUpperCase();
-            if (valUpper.includes('D')) value = -Math.abs(value);
-            if (valUpper.includes('C')) value = Math.abs(value);
-          }
+      let value = 0;
+      if (typeof valueRaw === 'number') {
+        value = valueRaw;
+      } else {
+        const cleanVal = String(valueRaw).replace(/[^\d.,-]/g, '').replace(',', '.');
+        value = parseFloat(cleanVal);
+        const valUpper = String(valueRaw).toUpperCase();
+        if (valUpper.includes('D')) value = -Math.abs(value);
+        if (valUpper.includes('C')) value = Math.abs(value);
+      }
 
-          const finalDate = parseFlexibleDate(dateRaw);
-          let finalCatId = 'cat-unassigned';
-          if (catRaw) {
-            const catName = String(catRaw).trim().toLowerCase();
-            const matchedCat = categories.find(c => c.name.toLowerCase() === catName);
-            if (matchedCat) finalCatId = matchedCat.id;
-          }
+      const finalDate = parseFlexibleDate(dateRaw);
+      let finalCatId = 'cat-unassigned';
+      if (catRaw) {
+        const catName = String(catRaw).trim().toLowerCase();
+        const matchedCat = categories.find(c => c.name.toLowerCase() === catName);
+        if (matchedCat) finalCatId = matchedCat.id;
+      }
 
-          results.push({
-            id: `import-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 4)}`,
-            date: finalDate,
-            description: String(descRaw).trim(),
-            amount: value,
-            type: value >= 0 ? 'income' : 'expense',
-            categoryId: finalCatId
-          });
-        }
-
-        setProgress(Math.round((endIndex / rows.length) * 100));
-
-        if (endIndex < rows.length) {
-          setTimeout(() => resolve(processChunk(endIndex)), 0);
-        } else {
-          resolve();
-        }
+      results.push({
+        id: `import-${Date.now()}-${i}`,
+        date: finalDate,
+        description: String(descRaw).trim(),
+        amount: value,
+        type: value >= 0 ? 'income' : 'expense',
+        categoryId: finalCatId
       });
-    };
-
-    try {
-      await processChunk(0);
-      const refinedResults = await aiCategorize(results);
-      onImport(refinedResults);
-      onClose();
-    } catch (err) {
-      setError('Erro ao processar arquivo. Tente um formato mais simples.');
-    } finally {
-      setIsProcessing(false);
     }
+
+    await generateAISuggestions(results);
+  };
+
+  const applySuggestions = () => {
+    const final = tempTransactions.map(t => {
+      if (t.categoryId === 'cat-unassigned' && aiSuggestions[t.description]) {
+        return { ...t, categoryId: aiSuggestions[t.description] };
+      }
+      return t;
+    });
+    onImport(final);
+    onClose();
   };
 
   const isMappingValid = mapping.dateCol !== -1 && mapping.descriptionCol !== -1 && mapping.valueCol !== -1;
@@ -243,14 +240,10 @@ const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categori
             </div>
             <div>
               <h2 className="text-xl font-bold text-slate-900 leading-tight">Importar Extrato</h2>
-              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Módulo de Importação Inteligente</p>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Módulo de IA Financeira</p>
             </div>
           </div>
-          <button 
-            onClick={onClose} 
-            disabled={isProcessing} 
-            className="p-2 hover:bg-slate-100 rounded-xl transition-all disabled:opacity-30"
-          >
+          <button onClick={onClose} disabled={isProcessing} className="p-2 hover:bg-slate-100 rounded-xl transition-all">
             <X className="w-5 h-5 text-slate-400" />
           </button>
         </div>
@@ -266,42 +259,17 @@ const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categori
                   <Upload className="w-10 h-10" />
                 </div>
                 <div className="text-center space-y-2">
-                  <p className="text-xl font-bold text-slate-800">Arraste seu arquivo aqui</p>
-                  <p className="text-sm text-slate-500">Extratos CSV, Excel (XLSX) de qualquer banco</p>
+                  <p className="text-xl font-bold text-slate-800">Selecione seu extrato</p>
+                  <p className="text-sm text-slate-500">CSV ou XLSX de qualquer banco nacional</p>
                 </div>
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  onChange={handleFileUpload} 
-                  accept=".csv,.xlsx,.xls" 
-                  className="hidden" 
-                />
-              </div>
-
-              {error && (
-                <div className="p-4 bg-rose-50 text-rose-600 rounded-2xl flex gap-3 text-sm font-semibold border border-rose-100 animate-in slide-in-from-top-4">
-                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                  {error}
-                </div>
-              )}
-
-              <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex gap-4 items-start">
-                <div className="p-2 bg-amber-50 rounded-xl">
-                  <Sparkles className="w-5 h-5 text-amber-500" />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-bold text-slate-800">Mapeamento Automático</p>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    Nosso sistema identifica automaticamente as colunas de data, valor e descrição. Você só precisa confirmar!
-                  </p>
-                </div>
+                <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".csv,.xlsx,.xls" className="hidden" />
               </div>
             </div>
           )}
 
           {step === 'mapping' && parseResult && (
             <div className="space-y-8 animate-in fade-in slide-in-from-right-8 duration-500">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-6">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-6">
                 {[
                   { key: 'dateCol', label: 'Coluna de Data', required: true },
                   { key: 'descriptionCol', label: 'Coluna de Descrição', required: true },
@@ -313,49 +281,58 @@ const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categori
                       {field.label}
                       {field.required && <span className="text-rose-500 text-[8px] font-black">Mandatório</span>}
                     </label>
-                    <div className="relative group">
-                      <select
-                        className={`w-full bg-white border-2 rounded-2xl px-4 py-3.5 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all appearance-none cursor-pointer ${
-                          mapping[field.key as keyof ImportMapping] === -1 && field.required ? 'border-slate-100 text-slate-400' : 'border-blue-100 text-slate-900'
-                        }`}
-                        value={mapping[field.key as keyof ImportMapping]}
-                        onChange={(e) => setMapping({ ...mapping, [field.key]: parseInt(e.target.value) })}
-                      >
-                        <option value={-1}>Ignorar esta coluna</option>
-                        {parseResult.headers.map((h, i) => (
-                          <option key={i} value={i}>{h || `Coluna ${i + 1}`}</option>
-                        ))}
-                      </select>
-                      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-300">
-                        <ChevronRight className="w-4 h-4 rotate-90" />
-                      </div>
-                    </div>
+                    <select
+                      className="w-full bg-white border-2 rounded-2xl px-4 py-3.5 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-blue-500/10 border-blue-100"
+                      value={mapping[field.key as keyof ImportMapping]}
+                      onChange={(e) => setMapping({ ...mapping, [field.key]: parseInt(e.target.value) })}
+                    >
+                      <option value={-1}>Ignorar esta coluna</option>
+                      {parseResult.headers.map((h, i) => (
+                        <option key={i} value={i}>{h || `Coluna ${i + 1}`}</option>
+                      ))}
+                    </select>
                   </div>
                 ))}
               </div>
+            </div>
+          )}
 
-              <div className="space-y-4">
-                <div className="flex items-center justify-between px-1">
-                  <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Amostra dos Dados</h3>
-                  <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">{parseResult.rows.length} linhas detectadas</span>
-                </div>
-                <div className="bg-white border border-slate-100 rounded-[2rem] overflow-hidden shadow-sm">
-                  <div className="bg-slate-50/50 grid grid-cols-4 border-b border-slate-100 px-6 py-3 text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
-                    <div>Data</div>
-                    <div>Descrição</div>
-                    <div>Categoria</div>
-                    <div className="text-right">Valor</div>
-                  </div>
-                  <div className="divide-y divide-slate-50 max-h-40 overflow-y-auto">
-                    {parseResult.rows.slice(0, 5).map((row, i) => (
-                      <div key={i} className="grid grid-cols-4 px-6 py-3 bg-white text-[11px] text-slate-600 items-center">
-                        <div className="truncate font-mono font-medium">{row[mapping.dateCol] || '—'}</div>
-                        <div className="truncate font-bold text-slate-800">{row[mapping.descriptionCol] || '—'}</div>
-                        <div className="truncate italic text-slate-400">{mapping.categoryCol !== -1 ? (row[mapping.categoryCol] || 'Vazio') : 'N/A'}</div>
-                        <div className="text-right font-black text-slate-900">{row[mapping.valueCol] || '—'}</div>
+          {step === 'ai-review' && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-right-8 duration-500">
+              <div className="bg-blue-600 text-white p-6 rounded-[2rem] shadow-xl shadow-blue-200 relative overflow-hidden">
+                <Sparkles className="absolute -right-4 -top-4 w-24 h-24 opacity-20 rotate-12" />
+                <h3 className="text-lg font-bold flex items-center gap-2">
+                  <BrainCircuit className="w-6 h-6" />
+                  Classificação Inteligente
+                </h3>
+                <p className="text-sm opacity-90 mt-1">Identificamos categorias para {Object.keys(aiSuggestions).length} transações únicas.</p>
+              </div>
+
+              <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
+                <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
+                  {Object.entries(aiSuggestions).map(([desc, catId], idx) => {
+                    const cat = categories.find(c => c.id === catId);
+                    return (
+                      <div key={idx} className="p-4 flex items-center justify-between bg-white hover:bg-slate-50 transition-colors">
+                        <div className="flex-1">
+                          <p className="text-xs font-bold text-slate-800">{desc}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-[10px] font-black px-2.5 py-1 rounded-full text-white shadow-sm" style={{ backgroundColor: cat?.color || '#94a3b8' }}>
+                            {cat?.name || 'Sugestão Desconhecida'}
+                          </span>
+                          <div className="p-1 bg-emerald-50 text-emerald-600 rounded-lg">
+                            <Check className="w-3 h-3" />
+                          </div>
+                        </div>
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })}
+                  {Object.keys(aiSuggestions).length === 0 && (
+                    <div className="p-12 text-center text-slate-400 text-sm italic">
+                      Não encontramos sugestões automáticas seguras. Prosseguir com as categorias originais?
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -365,44 +342,34 @@ const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categori
         <div className="p-6 border-t border-slate-100 flex items-center justify-between bg-white">
           <div className="flex flex-col">
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-              {step === 'upload' ? 'Passo 1: Envio' : 'Passo 2: Mapeamento'}
+              {step === 'upload' ? 'Passo 1: Envio' : step === 'mapping' ? 'Passo 2: Configuração' : 'Passo 3: Revisão IA'}
             </p>
             {isProcessing && (
               <div className="mt-1 flex items-center gap-2">
-                <div className="w-24 h-1 bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-600 transition-all duration-300" style={{ width: `${progress}%` }} />
-                </div>
-                <span className="text-[9px] font-bold text-blue-600">{progress}%</span>
+                <Loader2 className="w-3 h-3 animate-spin text-blue-600" />
+                <span className="text-[9px] font-bold text-blue-600">Consultando Gemini AI...</span>
               </div>
             )}
           </div>
           <div className="flex gap-4">
-            <button 
-              onClick={onClose} 
-              disabled={isProcessing}
-              className="px-6 py-3 text-xs font-bold text-slate-400 hover:text-slate-900 transition-colors disabled:opacity-30"
-            >
+            <button onClick={onClose} disabled={isProcessing} className="px-6 py-3 text-xs font-bold text-slate-400 hover:text-slate-900 transition-colors">
               Cancelar
             </button>
             {step === 'mapping' && (
               <button
                 disabled={!isMappingValid || isProcessing}
-                onClick={processImport}
-                className={`flex items-center gap-2 px-10 py-3.5 rounded-2xl text-xs font-black text-white transition-all shadow-xl min-w-[200px] justify-center ${
-                  isMappingValid && !isProcessing ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-200 hover:-translate-y-0.5' : 'bg-slate-100 text-slate-400 cursor-not-allowed shadow-none'
-                }`}
+                onClick={processMapping}
+                className="px-10 py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-xs font-black shadow-xl shadow-blue-200 transition-all disabled:opacity-50"
               >
-                {isProcessing ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Processando...
-                  </>
-                ) : (
-                  <>
-                    Confirmar e Importar
-                    <ChevronRight className="w-4 h-4" />
-                  </>
-                )}
+                Gerar Sugestões
+              </button>
+            )}
+            {step === 'ai-review' && (
+              <button
+                onClick={applySuggestions}
+                className="px-10 py-3.5 bg-slate-900 hover:bg-black text-white rounded-2xl text-xs font-black shadow-xl shadow-slate-200 transition-all"
+              >
+                Finalizar Importação
               </button>
             )}
           </div>

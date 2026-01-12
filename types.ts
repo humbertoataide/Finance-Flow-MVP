@@ -23,6 +23,16 @@ export interface Transaction {
   type: TransactionType;
 }
 
+export interface RecurringTransaction {
+  id: string;
+  description: string;
+  amount: number;
+  categoryId: string;
+  type: TransactionType;
+  dayOfMonth: number;
+  active: boolean;
+}
+
 export interface Budget {
   categoryId: string;
   amount: number;

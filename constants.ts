@@ -15,4 +15,5 @@ export const STORAGE_KEYS = {
   TRANSACTIONS: 'ff_transactions',
   CATEGORIES: 'ff_categories',
   BUDGETS: 'ff_budgets',
+  RECURRING: 'ff_recurring',
 };

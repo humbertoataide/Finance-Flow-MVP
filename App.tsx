@@ -9,7 +9,7 @@ import ImportWizard from './components/ImportWizard';
 import TransactionForm from './components/TransactionForm';
 import AuthView from './components/AuthView';
 import { useFinanceData } from './hooks/useFinanceData';
-import { User } from './types';
+import { User, RecurringTransaction } from './types';
 
 type ViewType = 'dashboard' | 'transactions' | 'categories' | 'planning';
 
@@ -28,12 +28,15 @@ const App: React.FC = () => {
     transactions, 
     categories, 
     budgets,
+    recurring,
     addTransactions, 
     updateTransaction, 
     deleteTransaction,
     addCategory,
     deleteCategory,
-    updateBudget
+    updateBudget,
+    addRecurring,
+    removeRecurring
   } = useFinanceData(user?.id || null);
 
   const handleLogin = (newUser: User) => {
@@ -45,6 +48,20 @@ const App: React.FC = () => {
     setUser(null);
     localStorage.removeItem('ff_current_user');
     setActiveView('dashboard');
+  };
+
+  const handleCommitRecurring = (item: RecurringTransaction) => {
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(item.dayOfMonth).padStart(2, '0')}`;
+    
+    addTransactions([{
+      id: `rec-commit-${Date.now()}`,
+      date: dateStr,
+      description: item.description,
+      amount: item.type === 'expense' ? -Math.abs(item.amount) : Math.abs(item.amount),
+      categoryId: item.categoryId,
+      type: item.type
+    }]);
   };
 
   if (!user) {
@@ -80,7 +97,11 @@ const App: React.FC = () => {
             transactions={transactions} 
             categories={categories} 
             budgets={budgets}
+            recurring={recurring}
             onUpdateBudget={updateBudget}
+            onAddRecurring={addRecurring}
+            onRemoveRecurring={removeRecurring}
+            onCommitRecurring={handleCommitRecurring}
           />
         );
       default:
