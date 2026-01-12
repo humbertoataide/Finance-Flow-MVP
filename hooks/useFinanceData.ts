@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { Transaction, Category, Budget, RecurringTransaction } from '../types';
 import { DEFAULT_CATEGORIES } from '../constants';
@@ -15,13 +16,21 @@ export const useFinanceData = (userId: string | null) => {
     setLoading(true);
     try {
       const response = await fetch(`/api/finance?userId=${userId}`);
+      
+      const contentType = response.headers.get("content-type");
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Falha ao sincronizar com a nuvem');
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+          const errData = await response.json();
+          throw new Error(errData.error || 'Falha ao sincronizar com a nuvem');
+        } else {
+          const textError = await response.text();
+          console.error('Server returned non-json error:', textError);
+          throw new Error('O servidor encontrou um erro crítico e não pôde responder corretamente.');
+        }
       }
+
       const data = await response.json();
       
-      // Garante que amounts sejam sempre numbers (Postgres DECIMAL pode vir como string)
       const sanitizeAmount = (items: any[]) => items.map(item => ({
         ...item,
         amount: typeof item.amount === 'string' ? parseFloat(item.amount) : item.amount
@@ -60,9 +69,15 @@ export const useFinanceData = (userId: string | null) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
+
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Erro ao salvar alteração');
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+          const errData = await response.json();
+          throw new Error(errData.error || 'Erro ao salvar alteração');
+        } else {
+          throw new Error('Falha de comunicação com o servidor (Status ' + response.status + ')');
+        }
       }
       return true;
     } catch (err: any) {

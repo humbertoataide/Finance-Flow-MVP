@@ -2,13 +2,15 @@
 import pg from 'pg';
 const { Pool } = pg;
 
-// O Pool gerencia múltiplas conexões de forma eficiente
-// Ele usará automaticamente a variável de ambiente POSTGRES_URL ou DATABASE_URL
+// Inicializa o Pool fora do handler para reutilizar conexões em lambdas "quentes"
 const pool = new Pool({
   connectionString: process.env.POSTGRES_URL || process.env.DATABASE_URL,
   ssl: {
-    rejectUnauthorized: false // Necessário para conexões seguras com Supabase/Render/Neon
-  }
+    rejectUnauthorized: false
+  },
+  max: 10, // Limite de conexões simultâneas
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
 });
 
 export default async function handler(req, res) {
@@ -19,9 +21,11 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'User ID is required' });
   }
 
-  const client = await pool.connect();
-
+  let client;
   try {
+    // Tenta obter uma conexão do pool
+    client = await pool.connect();
+
     if (method === 'GET') {
       const [transactions, categories, budgets, recurring] = await Promise.all([
         client.query('SELECT id, user_id as "userId", date, description, amount::float, category_id as "categoryId", type, is_recurring as "isRecurring", recurring_id as "recurringId" FROM transactions WHERE user_id = $1 ORDER BY date DESC', [userId]),
@@ -125,9 +129,17 @@ export default async function handler(req, res) {
 
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (error) {
-    console.error('Database Error:', error);
-    return res.status(500).json({ error: error.message });
+    console.error('CRITICAL DATABASE ERROR:', error);
+    // Retorna JSON para evitar o erro de parsing no frontend
+    return res.status(500).json({ 
+      error: 'Erro interno no banco de dados', 
+      details: error.message,
+      code: error.code
+    });
   } finally {
-    client.release(); // Libera a conexão de volta para o pool
+    // Apenas libera se o client foi criado com sucesso
+    if (client) {
+      client.release();
+    }
   }
 }
