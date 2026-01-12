@@ -1,12 +1,12 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Transaction, Category, Budget } from '../types';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   PieChart, Pie, Cell, Legend, LabelList
 } from 'recharts';
-import { TrendingUp, TrendingDown, Wallet, Calendar, Target, Zap, Repeat } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, isWithinInterval, parseISO } from 'date-fns';
+import { TrendingUp, TrendingDown, Wallet, Calendar, Target, Zap, Repeat, Filter } from 'lucide-react';
+import { format, startOfMonth, endOfMonth, isWithinInterval, parseISO, startOfYear } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 interface DashboardProps {
@@ -16,31 +16,44 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets }) => {
-  const [filterPeriod, setFilterPeriod] = React.useState<'month' | 'year' | 'all'>('month');
+  const [filterPeriod, setFilterPeriod] = useState<'month' | 'year' | 'all' | 'custom'>('month');
+  const [customRange, setCustomRange] = useState({
+    start: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
+    end: format(new Date(), 'yyyy-MM-dd')
+  });
 
   const filteredTransactions = useMemo(() => {
     const now = new Date();
+    let start: Date;
+    let end: Date;
+
     if (filterPeriod === 'all') return transactions;
     
-    const start = filterPeriod === 'month' ? startOfMonth(now) : new Date(now.getFullYear(), 0, 1);
-    const end = filterPeriod === 'month' ? endOfMonth(now) : new Date(now.getFullYear(), 11, 31);
+    if (filterPeriod === 'month') {
+      start = startOfMonth(now);
+      end = endOfMonth(now);
+    } else if (filterPeriod === 'year') {
+      start = startOfYear(now);
+      end = endOfMonth(new Date(now.getFullYear(), 11, 31));
+    } else {
+      start = parseISO(customRange.start);
+      end = parseISO(customRange.end);
+    }
 
     return transactions.filter(t => isWithinInterval(parseISO(t.date), { start, end }));
-  }, [transactions, filterPeriod]);
+  }, [transactions, filterPeriod, customRange]);
 
   const stats = useMemo(() => {
     const income = filteredTransactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
     const expense = filteredTransactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + Math.abs(t.amount), 0);
     
     const fixedExpense = filteredTransactions.filter(t => t.type === 'expense' && t.isRecurring).reduce((acc, t) => acc + Math.abs(t.amount), 0);
-    const variableExpense = expense - fixedExpense;
 
     return {
       income,
       expense,
       balance: income - expense,
       fixedExpense,
-      variableExpense
     };
   }, [filteredTransactions]);
 
@@ -111,23 +124,44 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-12">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Análise Consolidada</h2>
-          <p className="text-sm text-slate-500">Gestão de receitas fixas e despesas recorrentes</p>
+          <p className="text-sm text-slate-500">Acompanhe seu fluxo de caixa e orçamentos</p>
         </div>
-        <div className="flex gap-2 bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
-          {(['month', 'year', 'all'] as const).map((p) => (
-            <button
-              key={p}
-              onClick={() => setFilterPeriod(p)}
-              className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                filterPeriod === p ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              {p === 'month' ? 'Mensal' : p === 'year' ? 'Anual' : 'Geral'}
-            </button>
-          ))}
+        
+        <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex bg-slate-100 p-1 rounded-xl">
+            {(['month', 'year', 'all', 'custom'] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setFilterPeriod(p)}
+                className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${
+                  filterPeriod === p ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {p === 'month' ? 'Mês' : p === 'year' ? 'Ano' : p === 'all' ? 'Tudo' : 'Custom'}
+              </button>
+            ))}
+          </div>
+
+          {filterPeriod === 'custom' && (
+            <div className="flex items-center gap-2 animate-in slide-in-from-right-2">
+              <input 
+                type="date" 
+                value={customRange.start}
+                onChange={(e) => setCustomRange({...customRange, start: e.target.value})}
+                className="bg-slate-50 border-none rounded-lg px-2 py-1 text-[10px] font-bold focus:ring-2 focus:ring-blue-500"
+              />
+              <span className="text-slate-400 text-[10px] font-bold">até</span>
+              <input 
+                type="date" 
+                value={customRange.end}
+                onChange={(e) => setCustomRange({...customRange, end: e.target.value})}
+                className="bg-slate-50 border-none rounded-lg px-2 py-1 text-[10px] font-bold focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -160,7 +194,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
             <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full uppercase tracking-widest">Custos Fixos</span>
           </div>
           <p className="text-2xl font-black text-slate-900">{formatCurrency(stats.fixedExpense)}</p>
-          <p className="text-[10px] text-slate-400 font-bold mt-1">Gasto Recorrente</p>
+          <p className="text-[10px] text-slate-400 font-bold mt-1">Lançamentos de Template</p>
         </div>
 
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
@@ -209,11 +243,42 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
           </div>
         </div>
 
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-slate-400" />
+            Gastos por Categoria
+          </h3>
+          <div className="h-80 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={distributionData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={65}
+                  outerRadius={95}
+                  paddingAngle={5}
+                  dataKey="value"
+                  label={({ name, value }) => `${name}: ${formatCurrency(value)}`}
+                >
+                  {distributionData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} strokeWidth={2} stroke="#fff" />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
+                  formatter={(value: number) => formatCurrency(value)}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm lg:col-span-2">
           <div className="flex items-center justify-between mb-6">
              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                <TrendingUp className="w-5 h-5 text-slate-400" />
-               Evolução Histórica
+               Evolução Histórica (Últimos 12 Meses)
              </h3>
           </div>
           <div className="h-80 w-full">

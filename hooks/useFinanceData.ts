@@ -59,8 +59,9 @@ export const useFinanceData = (userId: string | null) => {
 
   const addTransactions = useCallback((newItems: Transaction[]) => {
     setTransactions(prev => {
-      const existingKeys = new Set(prev.map(t => `${t.date}|${t.description}|${t.amount}`));
-      const filtered = newItems.filter(item => !existingKeys.has(`${item.date}|${item.description}|${item.amount}`));
+      // Usar ID único se disponível, senão fallback para chave composta
+      const existingIds = new Set(prev.map(t => t.id));
+      const filtered = newItems.filter(item => !existingIds.has(item.id));
       
       if (filtered.length === 0) return prev;
       return prev.concat(filtered).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -77,6 +78,10 @@ export const useFinanceData = (userId: string | null) => {
 
   const addCategory = useCallback((cat: Category) => {
     setCategories(prev => [...prev, cat]);
+  }, []);
+
+  const updateCategory = useCallback((id: string, updates: Partial<Category>) => {
+    setCategories(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
   }, []);
 
   const deleteCategory = useCallback((id: string) => {
@@ -116,6 +121,7 @@ export const useFinanceData = (userId: string | null) => {
     updateTransaction,
     deleteTransaction,
     addCategory,
+    updateCategory,
     deleteCategory,
     updateBudget,
     addRecurring,

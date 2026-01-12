@@ -10,7 +10,7 @@ import TransactionForm from './components/TransactionForm';
 import AuthView from './components/AuthView';
 import { useFinanceData } from './hooks/useFinanceData';
 import { User, RecurringTransaction, Transaction } from './types';
-import { startOfMonth, endOfMonth, isWithinInterval, parseISO } from 'date-fns';
+import { startOfMonth, endOfMonth, isWithinInterval, parseISO, addMonths, isBefore, isAfter, differenceInMonths, format } from 'date-fns';
 
 type ViewType = 'dashboard' | 'transactions' | 'categories' | 'planning';
 
@@ -34,68 +34,92 @@ const App: React.FC = () => {
     updateTransaction, 
     deleteTransaction,
     addCategory,
+    updateCategory,
     deleteCategory,
     updateBudget,
     addRecurring,
-    removeRecurring
+    removeRecurring,
+    updateRecurring
   } = useFinanceData(user?.id || null);
 
-  const handleCommitRecurring = useCallback((item: RecurringTransaction) => {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
+  const generateRecurringTransaction = useCallback((item: RecurringTransaction, date: Date): Transaction => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(item.dayOfMonth).padStart(2, '0');
     const dateStr = `${year}-${month}-${day}`;
     
-    const newTransaction: Transaction = {
+    return {
       id: `rec-commit-${item.id}-${year}-${month}`,
       date: dateStr,
       description: item.description,
       amount: item.type === 'expense' ? -Math.abs(item.amount) : Math.abs(item.amount),
       categoryId: item.categoryId,
       type: item.type,
-      isRecurring: true
+      isRecurring: true,
+      recurringId: item.id
     };
+  }, []);
 
-    addTransactions([newTransaction]);
-  }, [addTransactions]);
-
-  // Motor de Processamento Automático de Recorrência
+  // Motor de Processamento Automático de Recorrência (Melhorado para retroatividade)
   useEffect(() => {
     if (!user || recurring.length === 0) return;
 
     const today = new Date();
-    const startOfCurrentMonth = startOfMonth(today);
-    const endOfCurrentMonth = endOfMonth(today);
-
-    const pendingLaunches: RecurringTransaction[] = [];
+    const pendingLaunches: Transaction[] = [];
 
     recurring.forEach(item => {
       if (!item.active) return;
 
-      // Verificar se a data atual está dentro do intervalo permitido
-      const start = item.startDate ? parseISO(item.startDate) : new Date(2000, 0, 1);
-      const end = item.endDate ? parseISO(item.endDate) : new Date(2100, 0, 1);
+      // Início: se não tiver startDate, considera 12 meses atrás como limite razoável
+      const startLimit = item.startDate ? parseISO(item.startDate) : startOfMonth(addMonths(today, -12));
+      const endLimit = item.endDate ? parseISO(item.endDate) : addMonths(today, 1); // Até hoje + folga
+
+      let currentCheck = startOfMonth(startLimit);
       
-      const isPeriodActive = isWithinInterval(today, { start, end });
-      if (!isPeriodActive) return;
+      // Itera mês a mês desde o início até hoje
+      while (isBefore(currentCheck, addMonths(today, 1))) {
+        // Se estiver fora do range final, para
+        if (item.endDate && isAfter(currentCheck, parseISO(item.endDate))) break;
 
-      // Verificar se já existe lançamento para este item neste mês
-      const alreadyLaunched = transactions.some(t => 
-        t.isRecurring && 
-        t.description === item.description && 
-        isWithinInterval(parseISO(t.date), { start: startOfCurrentMonth, end: endOfCurrentMonth })
-      );
+        const startOfM = startOfMonth(currentCheck);
+        const endOfM = endOfMonth(currentCheck);
 
-      if (!alreadyLaunched) {
-        pendingLaunches.push(item);
+        // Verifica se já existe lançamento para este item neste mês específico
+        const alreadyLaunched = transactions.some(t => 
+          t.recurringId === item.id && 
+          isWithinInterval(parseISO(t.date), { start: startOfM, end: endOfM })
+        );
+
+        if (!alreadyLaunched) {
+          pendingLaunches.push(generateRecurringTransaction(item, currentCheck));
+        }
+
+        currentCheck = addMonths(currentCheck, 1);
       }
     });
 
     if (pendingLaunches.length > 0) {
-      pendingLaunches.forEach(handleCommitRecurring);
+      addTransactions(pendingLaunches);
     }
-  }, [user, recurring, transactions, handleCommitRecurring]);
+  }, [user, recurring, transactions, addTransactions, generateRecurringTransaction]);
+
+  const handleUpdateRecurringWithImpact = (id: string, updates: Partial<RecurringTransaction>, impactPast: boolean) => {
+    updateRecurring(id, updates);
+
+    if (impactPast) {
+      // Atualiza todas as transações já geradas por este template
+      const updatedTransactions = transactions
+        .filter(t => t.recurringId === id)
+        .map(t => ({
+          ...t,
+          description: updates.description ?? t.description,
+          amount: updates.amount !== undefined ? (t.type === 'expense' ? -Math.abs(updates.amount) : Math.abs(updates.amount)) : t.amount,
+          categoryId: updates.categoryId ?? t.categoryId,
+        }));
+
+      updatedTransactions.forEach(t => updateTransaction(t.id, t));
+    }
+  };
 
   const handleLogin = (newUser: User) => {
     setUser(newUser);
@@ -132,6 +156,7 @@ const App: React.FC = () => {
           <CategoryManager 
             categories={categories} 
             onAdd={addCategory} 
+            onUpdate={updateCategory}
             onDelete={deleteCategory} 
           />
         );
@@ -145,7 +170,8 @@ const App: React.FC = () => {
             onUpdateBudget={updateBudget}
             onAddRecurring={addRecurring}
             onRemoveRecurring={removeRecurring}
-            onCommitRecurring={handleCommitRecurring}
+            onUpdateRecurring={handleUpdateRecurringWithImpact}
+            onCommitRecurring={(item) => addTransactions([generateRecurringTransaction(item, new Date())])}
           />
         );
       default:

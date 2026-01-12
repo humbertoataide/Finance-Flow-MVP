@@ -22,6 +22,7 @@ export interface Transaction {
   categoryId: string;
   type: TransactionType;
   isRecurring?: boolean;
+  recurringId?: string; // Link para o template original
 }
 
 export interface RecurringTransaction {
