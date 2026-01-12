@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import TransactionGrid from './components/TransactionGrid';
@@ -6,31 +6,31 @@ import CategoryManager from './components/CategoryManager';
 import PlanningView from './components/PlanningView';
 import ImportWizard from './components/ImportWizard';
 import TransactionForm from './components/TransactionForm';
-import AuthView from './components/AuthView';
 import { useFinanceData } from './hooks/useFinanceData';
-import { User, RecurringTransaction, Transaction } from './types';
+import { RecurringTransaction, Transaction, User } from './types';
 import { startOfMonth, endOfMonth, isWithinInterval, parseISO, addMonths, isBefore, isAfter } from 'date-fns';
 import { Loader2, CloudOff } from 'lucide-react';
 
 type ViewType = 'dashboard' | 'transactions' | 'categories' | 'planning';
 
+// Usuário padrão único para o sistema simplificado
+const DEFAULT_USER: User = {
+  id: 'main-user',
+  name: 'Meu Financeiro',
+  email: 'admin@financeflow.local'
+};
+
 const App: React.FC = () => {
-  const [user, setUser] = useState<User | null>(null);
   const [activeView, setActiveView] = useState<ViewType>('dashboard');
   const [showImport, setShowImport] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
-
-  useEffect(() => {
-    const savedUser = localStorage.getItem('ff_current_user');
-    if (savedUser) setUser(JSON.parse(savedUser));
-  }, []);
 
   const { 
     transactions, categories, budgets, recurring, loading, error,
     addTransactions, updateTransaction, deleteTransaction,
     addCategory, updateCategory, deleteCategory, updateBudget,
     addRecurring, removeRecurring, updateRecurring
-  } = useFinanceData(user?.id || null);
+  } = useFinanceData(DEFAULT_USER.id);
 
   const generateRecurringTransaction = useCallback((item: RecurringTransaction, date: Date): Transaction => {
     const year = date.getFullYear();
@@ -50,8 +50,9 @@ const App: React.FC = () => {
     };
   }, []);
 
-  useEffect(() => {
-    if (!user || recurring.length === 0 || loading) return;
+  // Processamento de recorrências automáticas
+  React.useEffect(() => {
+    if (recurring.length === 0 || loading) return;
 
     const today = new Date();
     const pendingLaunches: Transaction[] = [];
@@ -59,7 +60,7 @@ const App: React.FC = () => {
     recurring.forEach(item => {
       if (!item.active) return;
       let currentCheck = item.startDate ? parseISO(item.startDate) : startOfMonth(addMonths(today, -12));
-      const futureLimit = addMonths(today, 13);
+      const futureLimit = addMonths(today, 1); // Limite de 1 mês à frente
       currentCheck = startOfMonth(currentCheck);
       
       while (isBefore(currentCheck, futureLimit)) {
@@ -80,7 +81,7 @@ const App: React.FC = () => {
     if (pendingLaunches.length > 0) {
       addTransactions(pendingLaunches);
     }
-  }, [user, recurring, transactions, loading, addTransactions, generateRecurringTransaction]);
+  }, [recurring, transactions, loading, addTransactions, generateRecurringTransaction]);
 
   const handleUpdateRecurringWithImpact = (id: string, updates: Partial<RecurringTransaction>, impactPast: boolean) => {
     updateRecurring(id, updates);
@@ -96,21 +97,6 @@ const App: React.FC = () => {
       updatedTransactions.forEach(t => updateTransaction(t.id, t));
     }
   };
-
-  const handleLogin = (newUser: User) => {
-    setUser(newUser);
-    localStorage.setItem('ff_current_user', JSON.stringify(newUser));
-  };
-
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('ff_current_user');
-    setActiveView('dashboard');
-  };
-
-  if (!user) {
-    return <AuthView onLogin={handleLogin} />;
-  }
 
   const renderContent = () => {
     if (error) {
@@ -167,12 +153,12 @@ const App: React.FC = () => {
   };
 
   return (
-    <Layout activeView={activeView} setActiveView={setActiveView} user={user} onLogout={handleLogout}>
+    <Layout activeView={activeView} setActiveView={setActiveView} user={DEFAULT_USER}>
       {loading && (
         <div className="fixed inset-0 z-[100] bg-slate-50/60 backdrop-blur-[2px] flex items-center justify-center">
           <div className="bg-white p-6 rounded-3xl shadow-2xl flex flex-col items-center space-y-4 border border-slate-100">
              <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
-             <p className="text-sm font-bold text-slate-600">Sincronizando dados remotos...</p>
+             <p className="text-sm font-bold text-slate-600">Sincronizando dados...</p>
           </div>
         </div>
       )}

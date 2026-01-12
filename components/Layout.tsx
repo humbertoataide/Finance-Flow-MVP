@@ -1,6 +1,5 @@
-
 import React from 'react';
-import { LayoutDashboard, ReceiptText, Tags, Target, Menu, X, LogOut, User as UserIcon } from 'lucide-react';
+import { LayoutDashboard, ReceiptText, Tags, Target, Menu, X, User as UserIcon } from 'lucide-react';
 import { User } from '../types';
 
 interface LayoutProps {
@@ -8,10 +7,9 @@ interface LayoutProps {
   activeView: 'dashboard' | 'transactions' | 'categories' | 'planning';
   setActiveView: (view: 'dashboard' | 'transactions' | 'categories' | 'planning') => void;
   user: User;
-  onLogout: () => void;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, activeView, setActiveView, user, onLogout }) => {
+const Layout: React.FC<LayoutProps> = ({ children, activeView, setActiveView, user }) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
 
   const menuItems = [
@@ -43,7 +41,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setActiveView, us
              </div>
              <h1 className="text-xl font-black text-slate-900 tracking-tighter">FinanceFlow</h1>
           </div>
-          <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest pl-10">MVP PRO</p>
+          <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest pl-10">Personal Edition</p>
         </div>
 
         <nav className="mt-6 px-4 space-y-1">
@@ -76,17 +74,9 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setActiveView, us
             </div>
           </div>
           
-          <button 
-            onClick={onLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-rose-500 hover:bg-rose-50 rounded-2xl transition-all"
-          >
-            <LogOut className="w-5 h-5" />
-            Sair do App
-          </button>
-
           <div className="p-4 bg-slate-900 rounded-2xl text-white">
-            <p className="text-[10px] opacity-70 uppercase font-bold tracking-widest">Sincronização Local</p>
-            <p className="text-[9px] mt-1 leading-tight opacity-50">Seus dados estão seguros neste navegador.</p>
+            <p className="text-[10px] opacity-70 uppercase font-bold tracking-widest">Acesso Privado</p>
+            <p className="text-[9px] mt-1 leading-tight opacity-50">Sistema configurado para uso pessoal.</p>
           </div>
         </div>
       </aside>
