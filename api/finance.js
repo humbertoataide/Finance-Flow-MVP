@@ -1,36 +1,43 @@
-
 import pg from 'pg';
 const { Pool } = pg;
 
-// Configuração robusta para o Pool de conexões
-const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+// Use a singleton pattern for the pool to ensure it stays active across requests
+let pool;
 
-const poolConfig = {
-  connectionString,
-  ssl: {
-    // Força a aceitação de certificados auto-assinados, comum em Neon/Supabase/Render
-    rejectUnauthorized: false
-  },
-  max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
-};
+function getPool() {
+  if (!pool) {
+    const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+    
+    if (!connectionString) {
+      throw new Error('Database connection string is missing in environment variables.');
+    }
 
-const pool = new Pool(poolConfig);
+    pool = new Pool({
+      connectionString,
+      ssl: {
+        rejectUnauthorized: false
+      },
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
+    });
+    
+    pool.on('error', (err) => {
+      console.error('Unexpected error on idle database client', err);
+    });
+  }
+  return pool;
+}
 
 async function ensureSchema(client) {
-  // Criação de tabelas individualmente para maior compatibilidade
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS categories (
+  const queries = [
+    `CREATE TABLE IF NOT EXISTS categories (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       name TEXT NOT NULL,
       color TEXT NOT NULL
-    )
-  `);
-
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS transactions (
+    )`,
+    `CREATE TABLE IF NOT EXISTS transactions (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       date DATE NOT NULL,
@@ -40,20 +47,14 @@ async function ensureSchema(client) {
       type TEXT NOT NULL,
       is_recurring BOOLEAN DEFAULT FALSE,
       recurring_id TEXT
-    )
-  `);
-
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS budgets (
+    )`,
+    `CREATE TABLE IF NOT EXISTS budgets (
       user_id TEXT NOT NULL,
       category_id TEXT NOT NULL,
       amount DECIMAL(12,2) NOT NULL,
       PRIMARY KEY (user_id, category_id)
-    )
-  `);
-
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS recurring_templates (
+    )`,
+    `CREATE TABLE IF NOT EXISTS recurring_templates (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       description TEXT NOT NULL,
@@ -64,20 +65,17 @@ async function ensureSchema(client) {
       active BOOLEAN DEFAULT TRUE,
       start_date DATE,
       end_date DATE
-    )
-  `);
+    )`
+  ];
+
+  for (const q of queries) {
+    await client.query(q);
+  }
 }
 
 export default async function handler(req, res) {
   const { method } = req;
   const { userId, action } = req.query;
-
-  if (!connectionString) {
-    return res.status(500).json({ 
-      error: 'Configuração de Banco de Dados ausente.',
-      details: 'As variáveis POSTGRES_URL ou DATABASE_URL não foram encontradas no ambiente.'
-    });
-  }
 
   if (!userId) {
     return res.status(400).json({ error: 'User ID é obrigatório.' });
@@ -85,18 +83,10 @@ export default async function handler(req, res) {
 
   let client;
   try {
-    client = await pool.connect();
+    const p = getPool();
+    client = await p.connect();
     
-    // Garantir que as tabelas existem
-    try {
-      await ensureSchema(client);
-    } catch (schemaError) {
-      console.error('Falha ao criar esquema:', schemaError);
-      return res.status(500).json({ 
-        error: 'Erro ao preparar banco de dados', 
-        details: schemaError.message 
-      });
-    }
+    await ensureSchema(client);
 
     if (method === 'GET') {
       const [transactions, categories, budgets, recurring] = await Promise.all([
