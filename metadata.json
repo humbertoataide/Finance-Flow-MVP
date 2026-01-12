@@ -1,0 +1,5 @@
+{
+  "name": "FinanceFlow MVP",
+  "description": "A simplified personal financial manager focused on post-spending analysis via CSV/XLSX imports, featuring intelligent mapping, data sanitization, and consolidated dashboards.",
+  "requestFramePermissions": []
+}
