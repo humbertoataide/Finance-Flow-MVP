@@ -32,6 +32,8 @@ export interface RecurringTransaction {
   type: TransactionType;
   dayOfMonth: number;
   active: boolean;
+  startDate?: string;
+  endDate?: string;
 }
 
 export interface Budget {

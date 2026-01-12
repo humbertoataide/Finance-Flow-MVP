@@ -5,8 +5,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   PieChart, Pie, Cell, Legend, LabelList
 } from 'recharts';
-import { TrendingUp, TrendingDown, Wallet, Calendar, Target, Zap, Repeat, Activity } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, isWithinInterval, parseISO, addMonths, subMonths } from 'date-fns';
+import { TrendingUp, TrendingDown, Wallet, Calendar, Target, Zap, Repeat } from 'lucide-react';
+import { format, startOfMonth, endOfMonth, isWithinInterval, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 interface DashboardProps {
@@ -75,7 +75,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
     });
 
     return categories
-      .filter(c => c.id !== 'cat-unassigned')
+      .filter(c => !['cat-salario', 'cat-stocks', 'cat-beneficios', 'cat-unassigned'].includes(c.id))
       .map(cat => {
         const spent = spentMap.get(cat.id) || 0;
         const budget = budgets.find(b => b.categoryId === cat.id)?.amount || 0;
@@ -100,7 +100,8 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
   const timelineData = useMemo(() => {
     const groups: Record<string, { month: string, income: number, expense: number }> = {};
     transactions.forEach(t => {
-      const monthKey = format(parseISO(t.date), 'MMM/yy', { locale: ptBR });
+      const date = parseISO(t.date);
+      const monthKey = format(date, 'MMM/yy', { locale: ptBR });
       if (!groups[monthKey]) groups[monthKey] = { month: monthKey, income: 0, expense: 0 };
       if (t.type === 'income') groups[monthKey].income += t.amount;
       else groups[monthKey].expense += Math.abs(t.amount);
@@ -112,8 +113,8 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
     <div className="space-y-6 animate-in fade-in duration-500 pb-12">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800">Resumo Financeiro</h2>
-          <p className="text-sm text-slate-500">Acompanhe seu desempenho e metas</p>
+          <h2 className="text-2xl font-bold text-slate-800">Análise Consolidada</h2>
+          <p className="text-sm text-slate-500">Gestão de receitas fixas e despesas recorrentes</p>
         </div>
         <div className="flex gap-2 bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
           {(['month', 'year', 'all'] as const).map((p) => (
@@ -131,43 +132,40 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden group">
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl group-hover:scale-110 transition-transform">
+            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
               <TrendingUp className="w-6 h-6" />
             </div>
             <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full uppercase tracking-widest">Receitas</span>
           </div>
           <p className="text-2xl font-black text-slate-900">{formatCurrency(stats.income)}</p>
-          <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-emerald-50/30 rounded-full blur-2xl" />
         </div>
 
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden group">
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-rose-50 text-rose-600 rounded-2xl group-hover:scale-110 transition-transform">
+            <div className="p-3 bg-rose-50 text-rose-600 rounded-2xl">
               <TrendingDown className="w-6 h-6" />
             </div>
             <span className="text-[10px] font-black text-rose-600 bg-rose-50 px-2.5 py-1 rounded-full uppercase tracking-widest">Despesas</span>
           </div>
           <p className="text-2xl font-black text-slate-900">{formatCurrency(stats.expense)}</p>
-          <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-rose-50/30 rounded-full blur-2xl" />
         </div>
 
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden group">
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl group-hover:scale-110 transition-transform">
+            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
               <Repeat className="w-6 h-6" />
             </div>
-            <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full uppercase tracking-widest">Contas Fixas</span>
+            <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full uppercase tracking-widest">Custos Fixos</span>
           </div>
           <p className="text-2xl font-black text-slate-900">{formatCurrency(stats.fixedExpense)}</p>
-          <p className="text-[10px] text-slate-400 font-bold mt-1">Lançamentos Recorrentes</p>
-          <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-indigo-50/30 rounded-full blur-2xl" />
+          <p className="text-[10px] text-slate-400 font-bold mt-1">Gasto Recorrente</p>
         </div>
 
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden group">
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl group-hover:scale-110 transition-transform">
+            <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
               <Wallet className="w-6 h-6" />
             </div>
             <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest ${stats.balance >= 0 ? 'text-blue-600 bg-blue-50' : 'text-rose-600 bg-rose-50'}`}>
@@ -177,7 +175,6 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
           <p className={`text-2xl font-black ${stats.balance >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
             {formatCurrency(stats.balance)}
           </p>
-          <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-blue-50/30 rounded-full blur-2xl" />
         </div>
       </div>
 
@@ -188,24 +185,23 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
               <Target className="w-5 h-5 text-blue-500" />
               Metas: Orçado vs Realizado
             </h3>
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Este Mês</span>
           </div>
           <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={budgetVsActualData} layout="vertical" margin={{ left: 20, right: 80 }}>
+              <BarChart data={budgetVsActualData} layout="vertical" margin={{ left: 20, right: 90 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                 <XAxis type="number" hide />
-                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} width={100} />
+                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} width={110} />
                 <Tooltip 
                   cursor={{ fill: '#f8fafc' }}
                   contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
                   formatter={(value: number) => formatCurrency(value)}
                 />
-                <Legend iconType="circle" verticalAlign="top" wrapperStyle={{ paddingBottom: '20px', fontSize: '10px' }} />
-                <Bar dataKey="Orçado" fill="#cbd5e1" radius={[0, 4, 4, 0]} barSize={10}>
+                <Legend iconType="circle" verticalAlign="top" align="right" wrapperStyle={{ paddingBottom: '20px', fontSize: '10px' }} />
+                <Bar dataKey="Orçado" fill="#cbd5e1" radius={[0, 4, 4, 0]} barSize={12}>
                    <LabelList dataKey="Orçado" position="right" formatter={(v: number) => v > 0 ? formatCurrency(v) : ''} style={{ fontSize: '9px', fontWeight: 'bold', fill: '#94a3b8' }} />
                 </Bar>
-                <Bar dataKey="Realizado" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={10}>
+                <Bar dataKey="Realizado" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={12}>
                    <LabelList dataKey="Realizado" position="right" formatter={(v: number) => v > 0 ? formatCurrency(v) : ''} style={{ fontSize: '9px', fontWeight: 'bold', fill: '#3b82f6' }} />
                 </Bar>
               </BarChart>
@@ -213,42 +209,13 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-slate-400" />
-            Gastos por Categoria
-          </h3>
-          <div className="h-80 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={distributionData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={65}
-                  outerRadius={95}
-                  paddingAngle={5}
-                  dataKey="value"
-                  label={({ name, value }) => `${name}: ${formatCurrency(value)}`}
-                >
-                  {distributionData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} strokeWidth={2} stroke="#fff" />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
-                  formatter={(value: number) => formatCurrency(value)}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm lg:col-span-2">
-          <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-slate-400" />
-            Evolução Mensal (Últimos 12 Meses)
-          </h3>
+          <div className="flex items-center justify-between mb-6">
+             <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+               <TrendingUp className="w-5 h-5 text-slate-400" />
+               Evolução Histórica
+             </h3>
+          </div>
           <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={timelineData} margin={{ top: 30, right: 30, left: 20, bottom: 20 }}>

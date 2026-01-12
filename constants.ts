@@ -2,12 +2,15 @@
 import { Category } from './types';
 
 export const DEFAULT_CATEGORIES: Category[] = [
+  { id: 'cat-salario', name: 'Salário', color: '#10b981' },
+  { id: 'cat-stocks', name: 'Stocks', color: '#059669' },
+  { id: 'cat-beneficios', name: 'Benefícios', color: '#34d399' },
   { id: 'cat-compras', name: 'Compras', color: '#ec4899' },
   { id: 'cat-comida', name: 'Comida & Bebida', color: '#ef4444' },
   { id: 'cat-transporte', name: 'Transporte', color: '#f59e0b' },
   { id: 'cat-entretenimento', name: 'Entretenimento', color: '#8b5cf6' },
   { id: 'cat-viagem', name: 'Viagem', color: '#06b6d4' },
-  { id: 'cat-saude', name: 'Saúde', color: '#10b981' },
+  { id: 'cat-saude', name: 'Saúde', color: '#14b8a6' },
   { id: 'cat-educacao', name: 'Educação', color: '#3b82f6' },
   { id: 'cat-familia', name: 'Família', color: '#6366f1' },
   { id: 'cat-investimento', name: 'Investimento', color: '#14b8a6' },
