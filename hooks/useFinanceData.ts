@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { Transaction, Category, Budget, RecurringTransaction } from '../types';
 import { DEFAULT_CATEGORIES } from '../constants';
@@ -16,11 +15,20 @@ export const useFinanceData = (userId: string | null) => {
     setLoading(true);
     try {
       const response = await fetch(`/api/finance?userId=${userId}`);
-      if (!response.ok) throw new Error('Falha ao sincronizar com a nuvem');
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Falha ao sincronizar com a nuvem');
+      }
       const data = await response.json();
       
-      setTransactions(data.transactions || []);
-      // Mescla categorias padrão com as do banco
+      // Garante que amounts sejam sempre numbers (Postgres DECIMAL pode vir como string)
+      const sanitizeAmount = (items: any[]) => items.map(item => ({
+        ...item,
+        amount: typeof item.amount === 'string' ? parseFloat(item.amount) : item.amount
+      }));
+
+      setTransactions(sanitizeAmount(data.transactions || []));
+      
       const dbCategories = data.categories || [];
       const mergedCategories = [...DEFAULT_CATEGORIES];
       dbCategories.forEach((dbCat: Category) => {
@@ -29,9 +37,12 @@ export const useFinanceData = (userId: string | null) => {
         else mergedCategories.push(dbCat);
       });
       setCategories(mergedCategories);
-      setBudgets(data.budgets || []);
-      setRecurring(data.recurring || []);
+      
+      setBudgets(sanitizeAmount(data.budgets || []));
+      setRecurring(sanitizeAmount(data.recurring || []));
+      setError(null);
     } catch (err: any) {
+      console.error('Fetch Error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -49,7 +60,10 @@ export const useFinanceData = (userId: string | null) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      if (!response.ok) throw new Error('Erro ao salvar alteração');
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Erro ao salvar alteração');
+      }
       return true;
     } catch (err: any) {
       setError(err.message);
@@ -99,7 +113,6 @@ export const useFinanceData = (userId: string | null) => {
   }, [categories, userId]);
 
   const deleteCategory = useCallback(async (id: string) => {
-    if (id.startsWith('cat-')) { /* Categorias padrão não deletamos do banco mas podemos do estado */ }
     const success = await apiPost('deleteCategory', { id });
     if (success) {
       setCategories(prev => prev.filter(c => c.id !== id));

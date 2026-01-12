@@ -10,12 +10,12 @@ export default async function handler(req, res) {
 
   try {
     if (method === 'GET') {
-      // Busca consolidada usando aliases para manter camelCase no frontend
+      // O cast ::float é essencial para que o driver Postgres retorne números em vez de strings para o campo DECIMAL
       const [transactions, categories, budgets, recurring] = await Promise.all([
-        sql`SELECT id, user_id as "userId", date, description, amount, category_id as "categoryId", type, is_recurring as "isRecurring", recurring_id as "recurringId" FROM transactions WHERE user_id = ${userId} ORDER BY date DESC`,
+        sql`SELECT id, user_id as "userId", date, description, amount::float, category_id as "categoryId", type, is_recurring as "isRecurring", recurring_id as "recurringId" FROM transactions WHERE user_id = ${userId} ORDER BY date DESC`,
         sql`SELECT id, user_id as "userId", name, color FROM categories WHERE user_id = ${userId}`,
-        sql`SELECT category_id as "categoryId", amount FROM budgets WHERE user_id = ${userId}`,
-        sql`SELECT id, user_id as "userId", description, amount, category_id as "categoryId", type, day_of_month as "dayOfMonth", active, start_date as "startDate", end_date as "endDate" FROM recurring_templates WHERE user_id = ${userId}`
+        sql`SELECT category_id as "categoryId", amount::float FROM budgets WHERE user_id = ${userId}`,
+        sql`SELECT id, user_id as "userId", description, amount::float, category_id as "categoryId", type, day_of_month as "dayOfMonth", active, start_date as "startDate", end_date as "endDate" FROM recurring_templates WHERE user_id = ${userId}`
       ]);
 
       return res.status(200).json({
@@ -31,16 +31,15 @@ export default async function handler(req, res) {
 
       switch (action) {
         case 'addTransactions':
-          // Processamento em lote para performance
           for (const t of body) {
             await sql`
               INSERT INTO transactions (id, user_id, date, description, amount, category_id, type, is_recurring, recurring_id)
               VALUES (${t.id}, ${userId}, ${t.date}, ${t.description}, ${t.amount}, ${t.categoryId}, ${t.type}, ${t.isRecurring || false}, ${t.recurringId || null})
               ON CONFLICT (id) DO UPDATE SET 
-                date = ${t.date}, 
-                description = ${t.description}, 
-                amount = ${t.amount}, 
-                category_id = ${t.categoryId}
+                date = EXCLUDED.date, 
+                description = EXCLUDED.description, 
+                amount = EXCLUDED.amount, 
+                category_id = EXCLUDED.category_id
             `;
           }
           break;
@@ -61,7 +60,7 @@ export default async function handler(req, res) {
           await sql`
             INSERT INTO categories (id, user_id, name, color)
             VALUES (${body.id}, ${userId}, ${body.name}, ${body.color})
-            ON CONFLICT (id) DO UPDATE SET name = ${body.name}, color = ${body.color}
+            ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, color = EXCLUDED.color
           `;
           break;
 
@@ -77,7 +76,7 @@ export default async function handler(req, res) {
           await sql`
             INSERT INTO budgets (user_id, category_id, amount)
             VALUES (${userId}, ${body.categoryId}, ${body.amount})
-            ON CONFLICT (user_id, category_id) DO UPDATE SET amount = ${body.amount}
+            ON CONFLICT (user_id, category_id) DO UPDATE SET amount = EXCLUDED.amount
           `;
           break;
 
@@ -86,11 +85,13 @@ export default async function handler(req, res) {
             INSERT INTO recurring_templates (id, user_id, description, amount, category_id, type, day_of_month, active, start_date, end_date)
             VALUES (${body.id}, ${userId}, ${body.description}, ${body.amount}, ${body.categoryId}, ${body.type}, ${body.dayOfMonth}, ${body.active}, ${body.startDate || null}, ${body.endDate || null})
             ON CONFLICT (id) DO UPDATE SET 
-              description = ${body.description}, 
-              amount = ${body.amount}, 
-              active = ${body.active},
-              category_id = ${body.categoryId},
-              day_of_month = ${body.dayOfMonth}
+              description = EXCLUDED.description, 
+              amount = EXCLUDED.amount, 
+              active = EXCLUDED.active,
+              category_id = EXCLUDED.category_id,
+              day_of_month = EXCLUDED.day_of_month,
+              start_date = EXCLUDED.start_date,
+              end_date = EXCLUDED.end_date
           `;
           break;
 

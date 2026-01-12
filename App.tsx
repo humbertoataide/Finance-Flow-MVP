@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
@@ -119,7 +118,7 @@ const App: React.FC = () => {
         <div className="flex flex-col items-center justify-center h-96 space-y-4">
           <CloudOff className="w-16 h-16 text-rose-500" />
           <h2 className="text-xl font-bold text-slate-800">Erro de Conexão</h2>
-          <p className="text-slate-500">{error}</p>
+          <p className="text-slate-500 text-center max-w-sm">{error}</p>
           <button onClick={() => window.location.reload()} className="px-6 py-2 bg-blue-600 text-white rounded-xl font-bold">Tentar Novamente</button>
         </div>
       );
@@ -173,7 +172,7 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[100] bg-slate-50/60 backdrop-blur-[2px] flex items-center justify-center">
           <div className="bg-white p-6 rounded-3xl shadow-2xl flex flex-col items-center space-y-4 border border-slate-100">
              <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
-             <p className="text-sm font-bold text-slate-600">Sincronizando com Vercel Postgres...</p>
+             <p className="text-sm font-bold text-slate-600">Sincronizando dados remotos...</p>
           </div>
         </div>
       )}
