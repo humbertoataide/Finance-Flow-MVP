@@ -2,7 +2,6 @@
 import pg from 'pg';
 const { Pool } = pg;
 
-// Inicializa o Pool fora do handler para reutilizar conexões
 const pool = new Pool({
   connectionString: process.env.POSTGRES_URL || process.env.DATABASE_URL,
   ssl: {
@@ -10,19 +9,21 @@ const pool = new Pool({
   },
   max: 10,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000, // Aumentado para 10s para lidar com cold starts
+  connectionTimeoutMillis: 10000,
 });
 
 async function ensureSchema(client) {
-  // Cria as tabelas necessárias se não existirem
+  // Executar comandos individualmente é mais seguro em drivers PG
   await client.query(`
     CREATE TABLE IF NOT EXISTS categories (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       name TEXT NOT NULL,
       color TEXT NOT NULL
-    );
+    )
+  `);
 
+  await client.query(`
     CREATE TABLE IF NOT EXISTS transactions (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -33,15 +34,19 @@ async function ensureSchema(client) {
       type TEXT NOT NULL,
       is_recurring BOOLEAN DEFAULT FALSE,
       recurring_id TEXT
-    );
+    )
+  `);
 
+  await client.query(`
     CREATE TABLE IF NOT EXISTS budgets (
       user_id TEXT NOT NULL,
       category_id TEXT NOT NULL,
       amount DECIMAL(12,2) NOT NULL,
       PRIMARY KEY (user_id, category_id)
-    );
+    )
+  `);
 
+  await client.query(`
     CREATE TABLE IF NOT EXISTS recurring_templates (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -53,7 +58,7 @@ async function ensureSchema(client) {
       active BOOLEAN DEFAULT TRUE,
       start_date DATE,
       end_date DATE
-    );
+    )
   `);
 }
 
@@ -61,22 +66,32 @@ export default async function handler(req, res) {
   const { method } = req;
   const { userId, action } = req.query;
 
-  if (!process.env.POSTGRES_URL && !process.env.DATABASE_URL) {
+  const dbUrl = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+  if (!dbUrl) {
     return res.status(500).json({ 
-      error: 'Variável de ambiente de banco de dados não configurada (POSTGRES_URL ou DATABASE_URL).' 
+      error: 'Variável de ambiente de banco de dados ausente.',
+      details: 'Certifique-se de que POSTGRES_URL ou DATABASE_URL está configurada no painel da Vercel.'
     });
   }
 
   if (!userId) {
-    return res.status(400).json({ error: 'User ID is required' });
+    return res.status(400).json({ error: 'User ID é obrigatório.' });
   }
 
   let client;
   try {
     client = await pool.connect();
     
-    // Garante que o banco está pronto
-    await ensureSchema(client);
+    // Inicialização do esquema
+    try {
+      await ensureSchema(client);
+    } catch (schemaError) {
+      console.error('Schema creation failed:', schemaError);
+      return res.status(500).json({ 
+        error: 'Falha ao preparar as tabelas do banco de dados.', 
+        details: schemaError.message 
+      });
+    }
 
     if (method === 'GET') {
       const [transactions, categories, budgets, recurring] = await Promise.all([
@@ -96,7 +111,6 @@ export default async function handler(req, res) {
 
     if (method === 'POST') {
       const body = req.body;
-
       switch (action) {
         case 'addTransactions':
           for (const t of body) {
@@ -173,19 +187,18 @@ export default async function handler(req, res) {
           break;
 
         default:
-          return res.status(400).json({ error: 'Invalid action' });
+          return res.status(400).json({ error: 'Ação inválida' });
       }
-
       return res.status(200).json({ success: true });
     }
 
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ error: 'Método não permitido' });
   } catch (error) {
-    console.error('DATABASE ERROR:', error);
+    console.error('API ERROR:', error);
     return res.status(500).json({ 
       error: 'Erro na operação do banco de dados', 
       details: error.message,
-      hint: 'Verifique se as credenciais no Vercel estão corretas.'
+      pgCode: error.code
     });
   } finally {
     if (client) client.release();

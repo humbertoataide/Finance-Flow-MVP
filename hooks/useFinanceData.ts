@@ -21,11 +21,15 @@ export const useFinanceData = (userId: string | null) => {
       if (!response.ok) {
         if (contentType && contentType.indexOf("application/json") !== -1) {
           const errData = await response.json();
-          throw new Error(errData.error || 'Falha ao sincronizar com a nuvem');
+          // Concatena o erro principal com os detalhes técnicos, se houver
+          const message = errData.details 
+            ? `${errData.error}: ${errData.details}` 
+            : (errData.error || 'Falha ao sincronizar com a nuvem');
+          throw new Error(message);
         } else {
           const textError = await response.text();
           console.error('Server returned non-json error:', textError);
-          throw new Error('O servidor encontrou um erro crítico e não pôde responder corretamente.');
+          throw new Error('Erro crítico no servidor (Status ' + response.status + ')');
         }
       }
 
@@ -74,7 +78,7 @@ export const useFinanceData = (userId: string | null) => {
         const contentType = response.headers.get("content-type");
         if (contentType && contentType.indexOf("application/json") !== -1) {
           const errData = await response.json();
-          throw new Error(errData.error || 'Erro ao salvar alteração');
+          throw new Error(errData.details ? `${errData.error}: ${errData.details}` : (errData.error || 'Erro ao salvar alteração'));
         } else {
           throw new Error('Falha de comunicação com o servidor (Status ' + response.status + ')');
         }
