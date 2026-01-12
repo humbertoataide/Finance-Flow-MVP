@@ -3,7 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { Transaction, Category } from '../types';
 import { 
   Search, Filter, Plus, FileUp, Trash2, Edit3, ChevronLeft, ChevronRight, 
-  ArrowUpRight, ArrowDownLeft, X, Check
+  ArrowUpRight, ArrowDownLeft, X, Check, Download
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -41,9 +41,33 @@ const TransactionGrid: React.FC<TransactionGridProps> = ({
     setEditingId(null);
   };
 
+  const exportToCSV = () => {
+    const headers = ['Data', 'Descrição', 'Categoria', 'Tipo', 'Valor'];
+    const rows = filteredTransactions.map(t => {
+      const cat = categories.find(c => c.id === t.categoryId)?.name || 'Sem Categoria';
+      return [
+        format(parseISO(t.date), 'dd/MM/yyyy'),
+        t.description.replace(/,/g, ''),
+        cat,
+        t.type === 'income' ? 'Receita' : 'Despesa',
+        t.amount.toString().replace('.', ',')
+      ];
+    });
+
+    const csvContent = [headers, ...rows].map(e => e.join(',')).join('\n');
+    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `transacoes_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="space-y-4">
-      {/* Header & Controls */}
       <div className="flex flex-col lg:flex-row gap-4 lg:items-center justify-between">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -79,6 +103,15 @@ const TransactionGrid: React.FC<TransactionGridProps> = ({
           </div>
 
           <button
+            onClick={exportToCSV}
+            title="Exportar para CSV (Sheets)"
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50 transition-all shadow-sm"
+          >
+            <Download className="w-4 h-4" />
+            Exportar
+          </button>
+
+          <button
             onClick={onImport}
             className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50 transition-all shadow-sm"
           >
@@ -96,7 +129,6 @@ const TransactionGrid: React.FC<TransactionGridProps> = ({
         </div>
       </div>
 
-      {/* Table Content */}
       <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[800px]">

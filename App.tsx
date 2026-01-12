@@ -10,7 +10,7 @@ import TransactionForm from './components/TransactionForm';
 import AuthView from './components/AuthView';
 import { useFinanceData } from './hooks/useFinanceData';
 import { User, RecurringTransaction, Transaction } from './types';
-import { startOfMonth, endOfMonth, isWithinInterval, parseISO, addMonths, isBefore, isAfter, differenceInMonths, format } from 'date-fns';
+import { startOfMonth, endOfMonth, isWithinInterval, parseISO, addMonths, isBefore, isAfter, format } from 'date-fns';
 
 type ViewType = 'dashboard' | 'transactions' | 'categories' | 'planning';
 
@@ -60,7 +60,7 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Motor de Processamento Automático de Recorrência (Melhorado para retroatividade)
+  // Motor de Processamento Automático de Recorrência (Refinado para preencher todas as lacunas)
   useEffect(() => {
     if (!user || recurring.length === 0) return;
 
@@ -70,15 +70,15 @@ const App: React.FC = () => {
     recurring.forEach(item => {
       if (!item.active) return;
 
-      // Início: se não tiver startDate, considera 12 meses atrás como limite razoável
-      const startLimit = item.startDate ? parseISO(item.startDate) : startOfMonth(addMonths(today, -12));
-      const endLimit = item.endDate ? parseISO(item.endDate) : addMonths(today, 1); // Até hoje + folga
+      // Se não tiver startDate, limita a 12 meses atrás para evitar loops infinitos ou dados excessivos
+      let currentCheck = item.startDate ? parseISO(item.startDate) : startOfMonth(addMonths(today, -12));
+      const endLimit = item.endDate ? parseISO(item.endDate) : addMonths(today, 1);
 
-      let currentCheck = startOfMonth(startLimit);
+      // Garante que começamos no início do mês da data de início
+      currentCheck = startOfMonth(currentCheck);
       
-      // Itera mês a mês desde o início até hoje
       while (isBefore(currentCheck, addMonths(today, 1))) {
-        // Se estiver fora do range final, para
+        // Se a data de verificação passou da data final da recorrência, interrompe
         if (item.endDate && isAfter(currentCheck, parseISO(item.endDate))) break;
 
         const startOfM = startOfMonth(currentCheck);
@@ -107,7 +107,6 @@ const App: React.FC = () => {
     updateRecurring(id, updates);
 
     if (impactPast) {
-      // Atualiza todas as transações já geradas por este template
       const updatedTransactions = transactions
         .filter(t => t.recurringId === id)
         .map(t => ({

@@ -1,8 +1,8 @@
 
 import React, { useMemo, useState } from 'react';
 import { Transaction, Category, Budget, RecurringTransaction, TransactionType } from '../types';
-import { Target, AlertCircle, CheckCircle2, TrendingUp, Zap, Plus, Trash2, Repeat, CalendarCheck, Lightbulb, Calendar, Edit3, X, HelpCircle } from 'lucide-react';
-import { startOfMonth, endOfMonth, isWithinInterval, parseISO, format } from 'date-fns';
+import { Target, AlertCircle, CheckCircle2, TrendingUp, Zap, Plus, Trash2, Repeat, CalendarCheck, Lightbulb, Calendar, Edit3, X, HelpCircle, History } from 'lucide-react';
+import { startOfMonth, endOfMonth, isWithinInterval, parseISO, format, subMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 interface PlanningViewProps {
@@ -48,9 +48,7 @@ const PlanningView: React.FC<PlanningViewProps> = ({
   ];
 
   const now = new Date();
-  const dayOfMonth = now.getDate();
-  const lastDay = endOfMonth(now).getDate();
-
+  
   const currentMonthTransactions = useMemo(() => {
     const start = startOfMonth(now);
     const end = endOfMonth(now);
@@ -64,6 +62,29 @@ const PlanningView: React.FC<PlanningViewProps> = ({
     });
     return map;
   }, [currentMonthTransactions]);
+
+  // Cálculo da média de gastos dos últimos 12 meses por categoria
+  const category12MonthAverage = useMemo(() => {
+    const twelveMonthsAgo = subMonths(now, 12);
+    const startRange = startOfMonth(twelveMonthsAgo);
+    const endRange = endOfMonth(subMonths(now, 1)); // Média até o mês passado para referência estável
+
+    const relevantTransactions = transactions.filter(t => 
+      t.type === 'expense' && isWithinInterval(parseISO(t.date), { start: startRange, end: endRange })
+    );
+
+    const totals = new Map<string, number>();
+    relevantTransactions.forEach(t => {
+      totals.set(t.categoryId, (totals.get(t.categoryId) || 0) + Math.abs(t.amount));
+    });
+
+    const averages = new Map<string, number>();
+    totals.forEach((val, key) => {
+      averages.set(key, val / 12);
+    });
+
+    return averages;
+  }, [transactions, now]);
 
   const committedRecurringIds = useMemo(() => {
     const start = startOfMonth(now);
@@ -193,14 +214,17 @@ const PlanningView: React.FC<PlanningViewProps> = ({
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Valor</label>
-                  <input 
-                    required
-                    type="number"
-                    placeholder="0,00"
-                    className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-4 focus:ring-blue-500/10 focus:bg-white transition-all"
-                    value={newRecurring.amount}
-                    onChange={e => setNewRecurring({...newRecurring, amount: e.target.value})}
-                  />
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">R$</span>
+                    <input 
+                      required
+                      type="number"
+                      placeholder="0,00"
+                      className="w-full bg-slate-50 border border-slate-100 rounded-xl pl-10 pr-4 py-2.5 text-sm font-bold focus:ring-4 focus:ring-blue-500/10 focus:bg-white transition-all"
+                      value={newRecurring.amount}
+                      onChange={e => setNewRecurring({...newRecurring, amount: e.target.value})}
+                    />
+                  </div>
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Dia Fixo</label>
@@ -272,7 +296,6 @@ const PlanningView: React.FC<PlanningViewProps> = ({
           </div>
         )}
 
-        {/* Impact Dialog Overlay */}
         {showImpactDialog && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
             <div className="bg-white max-w-sm w-full rounded-[2.5rem] p-8 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-300">
@@ -384,13 +407,14 @@ const PlanningView: React.FC<PlanningViewProps> = ({
           {categories.filter(c => !['cat-salario', 'cat-stocks', 'cat-beneficios', 'cat-unassigned'].includes(c.id)).map(cat => {
             const spent = categorySpending.get(cat.id) || 0;
             const budget = budgets.find(b => b.categoryId === cat.id)?.amount || 0;
+            const average = category12MonthAverage.get(cat.id) || 0;
             const percentage = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0;
             const isOver = budget > 0 && spent > budget;
             const remaining = budget - spent;
 
             return (
               <div key={cat.id} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-xl transition-all duration-300">
-                <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-sm" style={{ backgroundColor: cat.color }}>
                       <Target className="w-5 h-5" />
@@ -403,13 +427,21 @@ const PlanningView: React.FC<PlanningViewProps> = ({
                   {isOver && <div className="p-2 bg-rose-50 rounded-xl animate-bounce"><AlertCircle className="w-5 h-5 text-rose-500" /></div>}
                 </div>
 
+                {/* Info de Média Histórica */}
+                <div className="mb-6 flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-xl border border-slate-100">
+                  <History className="w-3.5 h-3.5 text-slate-400" />
+                  <p className="text-[10px] font-bold text-slate-500 truncate">
+                    Média 12m: <span className="text-slate-900">{formatCurrency(average)}</span>
+                  </p>
+                </div>
+
                 <div className="space-y-5">
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">R$</span>
                     <input
                       type="number"
                       placeholder="Meta de gasto"
-                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl pl-10 pr-4 py-3 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:bg-white transition-all"
+                      className="w-full bg-white border border-slate-200 rounded-2xl pl-10 pr-4 py-3 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:bg-white transition-all shadow-inner"
                       value={budget || ''}
                       onChange={(e) => onUpdateBudget(cat.id, parseFloat(e.target.value) || 0)}
                     />
