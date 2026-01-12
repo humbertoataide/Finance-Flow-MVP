@@ -21,6 +21,7 @@ export interface Transaction {
   amount: number;
   categoryId: string;
   type: TransactionType;
+  isRecurring?: boolean;
 }
 
 export interface RecurringTransaction {

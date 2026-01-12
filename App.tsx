@@ -60,7 +60,8 @@ const App: React.FC = () => {
       description: item.description,
       amount: item.type === 'expense' ? -Math.abs(item.amount) : Math.abs(item.amount),
       categoryId: item.categoryId,
-      type: item.type
+      type: item.type,
+      isRecurring: true
     }]);
   };
 

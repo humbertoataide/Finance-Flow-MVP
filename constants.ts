@@ -2,12 +2,17 @@
 import { Category } from './types';
 
 export const DEFAULT_CATEGORIES: Category[] = [
-  { id: 'cat-1', name: 'Moradia', color: '#3b82f6' },
-  { id: 'cat-2', name: 'Alimentação', color: '#ef4444' },
-  { id: 'cat-3', name: 'Transporte', color: '#f59e0b' },
-  { id: 'cat-4', name: 'Lazer', color: '#10b981' },
-  { id: 'cat-5', name: 'Saúde', color: '#8b5cf6' },
-  { id: 'cat-6', name: 'Renda', color: '#14b8a6' },
+  { id: 'cat-compras', name: 'Compras', color: '#ec4899' },
+  { id: 'cat-comida', name: 'Comida & Bebida', color: '#ef4444' },
+  { id: 'cat-transporte', name: 'Transporte', color: '#f59e0b' },
+  { id: 'cat-entretenimento', name: 'Entretenimento', color: '#8b5cf6' },
+  { id: 'cat-viagem', name: 'Viagem', color: '#06b6d4' },
+  { id: 'cat-saude', name: 'Saúde', color: '#10b981' },
+  { id: 'cat-educacao', name: 'Educação', color: '#3b82f6' },
+  { id: 'cat-familia', name: 'Família', color: '#6366f1' },
+  { id: 'cat-investimento', name: 'Investimento', color: '#14b8a6' },
+  { id: 'cat-outras-despesas', name: 'Outras Despesas', color: '#64748b' },
+  { id: 'cat-outras-receitas', name: 'Outras Receitas', color: '#22c55e' },
   { id: 'cat-unassigned', name: 'Sem Categoria', color: '#94a3b8' },
 ];
 
