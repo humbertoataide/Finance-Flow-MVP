@@ -5,7 +5,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   PieChart, Pie, Cell, Legend, LabelList
 } from 'recharts';
-import { TrendingUp, TrendingDown, Wallet, Calendar, Target, Repeat } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wallet, Calendar, Target, Repeat, ArrowRightLeft } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, isWithinInterval, parseISO, startOfYear } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -45,17 +45,25 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
 
   const stats = useMemo(() => {
     const income = filteredTransactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
-    const expense = filteredTransactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + Math.abs(t.amount), 0);
+    const expenses = filteredTransactions.filter(t => t.type === 'expense');
+    const totalExpense = expenses.reduce((acc, t) => acc + Math.abs(t.amount), 0);
     
-    const fixedExpense = filteredTransactions.filter(t => t.type === 'expense' && t.isRecurring).reduce((acc, t) => acc + Math.abs(t.amount), 0);
+    const fixedExpense = expenses.filter(t => t.isRecurring).reduce((acc, t) => acc + Math.abs(t.amount), 0);
+    const variableExpense = totalExpense - fixedExpense;
 
     return {
       income,
-      expense,
-      balance: income - expense,
+      expense: totalExpense,
+      balance: income - totalExpense,
       fixedExpense,
+      variableExpense
     };
   }, [filteredTransactions]);
+
+  const fixedVsVariableData = useMemo(() => [
+    { name: 'Gastos Fixos', value: stats.fixedExpense, color: '#6366f1' },
+    { name: 'Gastos Variáveis', value: stats.variableExpense, color: '#f43f5e' }
+  ], [stats]);
 
   const distributionData = useMemo(() => {
     const catMap = new Map<string, number>();
@@ -197,7 +205,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
             <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full uppercase tracking-widest">Custos Fixos</span>
           </div>
           <p className="text-2xl font-black text-slate-900">{formatCurrency(stats.fixedExpense)}</p>
-          <p className="text-[10px] text-slate-400 font-bold mt-1">Lançamentos de Template</p>
+          <p className="text-[10px] text-slate-400 font-bold mt-1">Transações Recorrentes</p>
         </div>
 
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
@@ -215,7 +223,78 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Gráfico Fixo vs Variável */}
+        <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
+           <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
+            <ArrowRightLeft className="w-5 h-5 text-indigo-500" />
+            Comprometimento: Fixo vs Variável
+          </h3>
+          <div className="h-80 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={fixedVsVariableData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={100}
+                  paddingAngle={8}
+                  dataKey="value"
+                >
+                  {fixedVsVariableData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} strokeWidth={2} stroke="#fff" />
+                  ))}
+                  <LabelList 
+                    dataKey="value" 
+                    position="outside" 
+                    formatter={(v: number) => `${((v / stats.expense) * 100).toFixed(0)}%`} 
+                    style={{ fontSize: '10px', fontWeight: 'black', fill: '#64748b' }}
+                  />
+                </Pie>
+                <Tooltip 
+                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
+                  formatter={(value: number) => formatCurrency(value)}
+                />
+                <Legend iconType="circle" verticalAlign="bottom" wrapperStyle={{ paddingTop: '20px', fontSize: '11px' }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Gráfico Gastos por Categoria */}
+        <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
+          <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-slate-400" />
+            Gastos por Categoria
+          </h3>
+          <div className="h-80 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={distributionData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={65}
+                  outerRadius={95}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  {distributionData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} strokeWidth={2} stroke="#fff" />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
+                  formatter={(value: number) => formatCurrency(value)}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6">
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -253,66 +332,33 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, budgets
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-slate-400" />
-            Gastos por Categoria
-          </h3>
-          <div className="h-80 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={distributionData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={65}
-                  outerRadius={95}
-                  paddingAngle={5}
-                  dataKey="value"
-                  label={({ name, value }) => `${name}: ${formatCurrency(value)}`}
-                >
-                  {distributionData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} strokeWidth={2} stroke="#fff" />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
-                  formatter={(value: number) => formatCurrency(value)}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm lg:col-span-1">
+        <div className="flex items-center justify-between mb-6">
+           <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+             <TrendingUp className="w-5 h-5 text-slate-400" />
+             Evolução Histórica
+           </h3>
         </div>
-
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm lg:col-span-1">
-          <div className="flex items-center justify-between mb-6">
-             <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-               <TrendingUp className="w-5 h-5 text-slate-400" />
-               Evolução Histórica
-             </h3>
-          </div>
-          <div className="h-80 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={timelineData} margin={{ top: 30, right: 30, left: 20, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} dy={10} />
-                <YAxis axisLine={false} tickLine={false} hide />
-                <Tooltip 
-                  cursor={{ fill: '#f8fafc' }}
-                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
-                  formatter={(value: number) => [formatCurrency(value), '']}
-                />
-                <Legend iconType="circle" verticalAlign="top" wrapperStyle={{ paddingBottom: '30px', fontSize: '11px' }} />
-                <Bar dataKey="income" name="Receita" fill="#10b981" radius={[6, 6, 0, 0]} barSize={40}>
-                  <LabelList dataKey="income" position="top" formatter={(v: number) => v > 0 ? formatCurrency(v) : ''} style={{ fontSize: '10px', fontWeight: 'bold', fill: '#10b981' }} />
-                </Bar>
-                <Bar dataKey="expense" name="Despesa" fill="#ef4444" radius={[6, 6, 0, 0]} barSize={40}>
-                  <LabelList dataKey="expense" position="top" formatter={(v: number) => v > 0 ? formatCurrency(v) : ''} style={{ fontSize: '10px', fontWeight: 'bold', fill: '#ef4444' }} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+        <div className="h-80 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={timelineData} margin={{ top: 30, right: 30, left: 20, bottom: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} dy={10} />
+              <YAxis axisLine={false} tickLine={false} hide />
+              <Tooltip 
+                cursor={{ fill: '#f8fafc' }}
+                contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
+                formatter={(value: number) => [formatCurrency(value), '']}
+              />
+              <Legend iconType="circle" verticalAlign="top" wrapperStyle={{ paddingBottom: '30px', fontSize: '11px' }} />
+              <Bar dataKey="income" name="Receita" fill="#10b981" radius={[6, 6, 0, 0]} barSize={40}>
+                <LabelList dataKey="income" position="top" formatter={(v: number) => v > 0 ? formatCurrency(v) : ''} style={{ fontSize: '10px', fontWeight: 'bold', fill: '#10b981' }} />
+              </Bar>
+              <Bar dataKey="expense" name="Despesa" fill="#ef4444" radius={[6, 6, 0, 0]} barSize={40}>
+                <LabelList dataKey="expense" position="top" formatter={(v: number) => v > 0 ? formatCurrency(v) : ''} style={{ fontSize: '10px', fontWeight: 'bold', fill: '#ef4444' }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
     </div>
