@@ -1,24 +1,19 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Transaction, ImportMapping, ParseResult, Category } from '../types';
-import { Upload, X, ChevronRight, AlertCircle, Sparkles, Loader2, Check, BrainCircuit } from 'lucide-react';
+import { Upload, X, ChevronRight, AlertCircle, Sparkles, Loader2, Check, BrainCircuit, Repeat, Calendar } from 'lucide-react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from "@google/genai";
+import { format, parseISO, getMonth } from 'date-fns';
 
 interface ImportWizardProps {
   onClose: () => void;
   onImport: (transactions: Transaction[]) => void;
   categories: Category[];
+  existingTransactions: Transaction[];
 }
 
-interface AISuggestion {
-  description: string;
-  categoryId: string;
-  categoryName: string;
-}
-
-const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categories }) => {
+const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categories, existingTransactions }) => {
   const [step, setStep] = useState<'upload' | 'mapping' | 'ai-review' | 'processing'>('upload');
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [mapping, setMapping] = useState<ImportMapping>({ 
@@ -29,9 +24,9 @@ const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categori
   });
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [progress, setProgress] = useState(0);
   const [aiSuggestions, setAiSuggestions] = useState<Record<string, string>>({});
   const [tempTransactions, setTempTransactions] = useState<Transaction[]>([]);
+  const [detectedRecurrences, setDetectedRecurrences] = useState<Set<string>>(new Set());
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -126,12 +121,44 @@ const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categori
     return new Date().toISOString().split('T')[0];
   };
 
+  const detectRecurrences = (imported: Transaction[]) => {
+    const newDetected = new Set<string>();
+    const normalizedHistory = existingTransactions.reduce((acc, t) => {
+      const key = t.description.toLowerCase().trim();
+      if (!acc[key]) acc[key] = new Set();
+      acc[key].add(getMonth(parseISO(t.date)));
+      return acc;
+    }, {} as Record<string, Set<number>>);
+
+    imported.forEach(t => {
+      const key = t.description.toLowerCase().trim();
+      const currentMonth = getMonth(parseISO(t.date));
+      
+      // Se já existe no histórico em meses diferentes
+      if (normalizedHistory[key] && (normalizedHistory[key].size > 1 || !normalizedHistory[key].has(currentMonth))) {
+        newDetected.add(key);
+      }
+      
+      // Keywords comuns de custo fixo
+      const fixedKeywords = ['aluguel', 'netflix', 'spotify', 'condominio', 'internet', 'claro', 'vivo', 'tim', 'academia'];
+      if (fixedKeywords.some(k => key.includes(k))) {
+        newDetected.add(key);
+      }
+    });
+
+    setDetectedRecurrences(newDetected);
+  };
+
   const generateAISuggestions = async (transactions: Transaction[]) => {
+    detectRecurrences(transactions);
+    
     const unassignedItems = transactions.filter(t => t.categoryId === 'cat-unassigned');
     if (unassignedItems.length === 0) {
-      setStep('processing');
-      onImport(transactions);
-      onClose();
+      setTempTransactions(transactions.map(t => ({
+        ...t,
+        isRecurring: detectedRecurrences.has(t.description.toLowerCase().trim())
+      })));
+      setStep('ai-review');
       return;
     }
 
@@ -155,14 +182,16 @@ const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categori
         config: { responseMimeType: 'application/json' }
       });
 
-      const suggestions = JSON.parse(response.text || '{}');
+      // Fix: response.text is a getter property. Handle potential undefined/unknown types.
+      const rawText = response.text || '{}';
+      const suggestions = JSON.parse(rawText);
       setAiSuggestions(suggestions);
       setTempTransactions(transactions);
       setStep('ai-review');
     } catch (err) {
       console.error(err);
-      onImport(transactions);
-      onClose();
+      setTempTransactions(transactions);
+      setStep('ai-review');
     } finally {
       setIsProcessing(false);
     }
@@ -171,7 +200,6 @@ const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categori
   const processMapping = async () => {
     if (!parseResult) return;
     setIsProcessing(true);
-    setProgress(0);
     
     const results: Transaction[] = [];
     const rows = parseResult.rows;
@@ -199,7 +227,9 @@ const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categori
       const finalDate = parseFlexibleDate(dateRaw);
       let finalCatId = 'cat-unassigned';
       if (catRaw) {
-        const catName = String(catRaw).trim().toLowerCase();
+        // Fix for Error line 356: Property 'toLowerCase' does not exist on type 'unknown'.
+        // Cast catRaw to any before calling toString/toLowerCase to handle potential typing issues.
+        const catName = String(catRaw || '').trim().toLowerCase();
         const matchedCat = categories.find(c => c.name.toLowerCase() === catName);
         if (matchedCat) finalCatId = matchedCat.id;
       }
@@ -214,21 +244,39 @@ const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categori
       });
     }
 
+    // Fix for Error line 375: Argument of type 'unknown' is not assignable to parameter of type 'string'.
+    // Ensure results is treated as Transaction[] before passing to generateAISuggestions.
     await generateAISuggestions(results);
+  };
+
+  const toggleRecurrence = (desc: string) => {
+    const key = desc.toLowerCase().trim();
+    const next = new Set(detectedRecurrences);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setDetectedRecurrences(next);
   };
 
   const applySuggestions = () => {
     const final = tempTransactions.map(t => {
-      if (t.categoryId === 'cat-unassigned' && aiSuggestions[t.description]) {
-        return { ...t, categoryId: aiSuggestions[t.description] };
+      const key = t.description.toLowerCase().trim();
+      let catId = t.categoryId;
+      if (catId === 'cat-unassigned' && aiSuggestions[t.description]) {
+        catId = aiSuggestions[t.description];
       }
-      return t;
+      return { 
+        ...t, 
+        categoryId: catId,
+        isRecurring: detectedRecurrences.has(key)
+      };
     });
     onImport(final);
     onClose();
   };
 
   const isMappingValid = mapping.dateCol !== -1 && mapping.descriptionCol !== -1 && mapping.valueCol !== -1;
+
+  const groupedByDesc = Array.from(new Set(tempTransactions.map(t => t.description)));
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
@@ -303,36 +351,45 @@ const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categori
                 <Sparkles className="absolute -right-4 -top-4 w-24 h-24 opacity-20 rotate-12" />
                 <h3 className="text-lg font-bold flex items-center gap-2">
                   <BrainCircuit className="w-6 h-6" />
-                  Classificação Inteligente
+                  Revisão de Classificação e Tipo
                 </h3>
-                <p className="text-sm opacity-90 mt-1">Identificamos categorias para {Object.keys(aiSuggestions).length} transações únicas.</p>
+                <p className="text-sm opacity-90 mt-1">Defina o que é custo fixo e confira as categorias sugeridas.</p>
               </div>
 
               <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
-                <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
-                  {Object.entries(aiSuggestions).map(([desc, catId], idx) => {
-                    const cat = categories.find(c => c.id === catId);
+                <div className="max-h-[25rem] overflow-y-auto divide-y divide-slate-100">
+                  {groupedByDesc.map((desc, idx) => {
+                    const key = desc.toLowerCase().trim();
+                    const isRec = detectedRecurrences.has(key);
+                    const catId = tempTransactions.find(t => t.description === desc)?.categoryId || 'cat-unassigned';
+                    const suggestedCatId = aiSuggestions[desc] || catId;
+                    const cat = categories.find(c => c.id === suggestedCatId);
+                    
                     return (
                       <div key={idx} className="p-4 flex items-center justify-between bg-white hover:bg-slate-50 transition-colors">
-                        <div className="flex-1">
-                          <p className="text-xs font-bold text-slate-800">{desc}</p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-[10px] font-black px-2.5 py-1 rounded-full text-white shadow-sm" style={{ backgroundColor: cat?.color || '#94a3b8' }}>
-                            {cat?.name || 'Sugestão Desconhecida'}
-                          </span>
-                          <div className="p-1 bg-emerald-50 text-emerald-600 rounded-lg">
-                            <Check className="w-3 h-3" />
+                        <div className="flex-1 min-w-0 pr-4">
+                          <p className="text-xs font-bold text-slate-800 truncate">{desc}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[9px] font-black px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: cat?.color || '#94a3b8' }}>
+                              {cat?.name}
+                            </span>
+                            {aiSuggestions[desc] && <Sparkles className="w-3 h-3 text-blue-500" />}
                           </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <button
+                            onClick={() => toggleRecurrence(desc)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border-2 transition-all ${isRec ? 'bg-indigo-50 border-indigo-200 text-indigo-600 shadow-sm' : 'bg-white border-slate-100 text-slate-400'}`}
+                          >
+                            {isRec ? <Repeat className="w-3 h-3" /> : <Calendar className="w-3 h-3" />}
+                            <span className="text-[10px] font-black uppercase tracking-tighter">
+                              {isRec ? 'Fixo' : 'Variável'}
+                            </span>
+                          </button>
                         </div>
                       </div>
                     );
                   })}
-                  {Object.keys(aiSuggestions).length === 0 && (
-                    <div className="p-12 text-center text-slate-400 text-sm italic">
-                      Não encontramos sugestões automáticas seguras. Prosseguir com as categorias originais?
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
@@ -342,12 +399,12 @@ const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categori
         <div className="p-6 border-t border-slate-100 flex items-center justify-between bg-white">
           <div className="flex flex-col">
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-              {step === 'upload' ? 'Passo 1: Envio' : step === 'mapping' ? 'Passo 2: Configuração' : 'Passo 3: Revisão IA'}
+              {step === 'upload' ? 'Passo 1: Envio' : step === 'mapping' ? 'Passo 2: Configuração' : 'Passo 3: Revisão Final'}
             </p>
             {isProcessing && (
               <div className="mt-1 flex items-center gap-2">
                 <Loader2 className="w-3 h-3 animate-spin text-blue-600" />
-                <span className="text-[9px] font-bold text-blue-600">Consultando Gemini AI...</span>
+                <span className="text-[9px] font-bold text-blue-600">Processando Inteligência...</span>
               </div>
             )}
           </div>
@@ -361,7 +418,7 @@ const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categori
                 onClick={processMapping}
                 className="px-10 py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-xs font-black shadow-xl shadow-blue-200 transition-all disabled:opacity-50"
               >
-                Gerar Sugestões
+                Analisar Padrões
               </button>
             )}
             {step === 'ai-review' && (
@@ -369,7 +426,7 @@ const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImport, categori
                 onClick={applySuggestions}
                 className="px-10 py-3.5 bg-slate-900 hover:bg-black text-white rounded-2xl text-xs font-black shadow-xl shadow-slate-200 transition-all"
               >
-                Finalizar Importação
+                Importar {tempTransactions.length} Lançamentos
               </button>
             )}
           </div>

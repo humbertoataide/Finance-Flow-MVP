@@ -13,7 +13,6 @@ import { Loader2, CloudOff } from 'lucide-react';
 
 type ViewType = 'dashboard' | 'transactions' | 'categories' | 'planning';
 
-// Usuário padrão único para o sistema simplificado
 const DEFAULT_USER: User = {
   id: 'main-user',
   name: 'Meu Financeiro',
@@ -50,7 +49,6 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Processamento de recorrências automáticas
   React.useEffect(() => {
     if (recurring.length === 0 || loading) return;
 
@@ -60,7 +58,7 @@ const App: React.FC = () => {
     recurring.forEach(item => {
       if (!item.active) return;
       let currentCheck = item.startDate ? parseISO(item.startDate) : startOfMonth(addMonths(today, -12));
-      const futureLimit = addMonths(today, 1); // Limite de 1 mês à frente
+      const futureLimit = addMonths(today, 1);
       currentCheck = startOfMonth(currentCheck);
       
       while (isBefore(currentCheck, futureLimit)) {
@@ -170,6 +168,7 @@ const App: React.FC = () => {
           onClose={() => setShowImport(false)} 
           onImport={(items) => addTransactions(items)}
           categories={categories}
+          existingTransactions={transactions}
         />
       )}
 
